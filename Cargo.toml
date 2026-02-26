@@ -1,12 +1,11 @@
 [package]
-name = "swaptop"
-version = "1.0.5"
+name = "nv-swaptop"
+version = "2.0.0"
 edition = "2024"
 rust-version = "1.88.0"
 authors = ["Luis Otavio <luotasss@gmail.com>"]
 
-
-description = "A terminal user interface tool to monitor swap usage on Linux and Windows."
+description = "A terminal user interface tool to monitor swap, NUMA topology, and GPU memory usage."
 readme = "README.md"
 repository = "https://github.com/luis-ota/swaptop"
 license = "MIT"

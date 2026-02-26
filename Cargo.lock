@@ -578,6 +578,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "nv-swaptop"
+version = "2.0.0"
+dependencies = [
+ "color-eyre",
+ "crossterm 0.29.0",
+ "proc-mounts",
+ "procfs",
+ "ratatui",
+ "sysinfo",
+ "tasklist",
+ "thiserror 2.0.17",
+ "winapi",
+]
+
+[[package]]
 name = "objc2-core-foundation"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -933,21 +948,6 @@ dependencies = [
  "quote",
  "rustversion",
  "syn",
-]
-
-[[package]]
-name = "swaptop"
-version = "1.0.5"
-dependencies = [
- "color-eyre",
- "crossterm 0.29.0",
- "proc-mounts",
- "procfs",
- "ratatui",
- "sysinfo",
- "tasklist",
- "thiserror 2.0.17",
- "winapi",
 ]
 
 [[package]]
