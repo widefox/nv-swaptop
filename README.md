@@ -175,7 +175,7 @@ Cycle through 5 themes with `t`:
 
 ## Architecture
 
-```text
+```tree
 src/
   main.rs              # Thin entry point
   app.rs               # App struct, event loop, state, key handling, caching
@@ -201,9 +201,11 @@ All data collection is behind a `DataProvider` trait, enabling mock-based testin
 ## Technical Details
 
 ### Data Sources
-- **Swap**: `/proc/meminfo`, `/proc/[pid]/status` (Linux); `sysinfo` crate (Windows)
-- **NUMA**: `/sys/devices/system/node/nodeN/meminfo`, `/proc/[pid]/numa_maps` (Linux only)
-- **GPU**: `nvidia-smi --query-compute-apps` and `--query-gpu` CSV output
+- **Swap**: `/proc/meminfo`, `/proc/[pid]/status` (Linux); `winapi` `GlobalMemoryStatusEx` + `tasklist` crate (Windows)
+- **Swap devices**: `/proc/swaps` via `proc-mounts` crate (Linux only)
+- **NUMA**: `/sys/devices/system/node/nodeN/meminfo`, `/sys/devices/system/node/nodeN/cpulist`, `/proc/[pid]/numa_maps` (Linux only)
+- **GPU**: `nvidia-smi` (from PATH) `--query-compute-apps` and `--query-gpu` CSV output
+- **GPU-NUMA mapping**: `/sys/bus/pci/devices/<pci_bus_id>/numa_node` (Linux only)
 
 ### Caching
 | Data Source | TTL | Notes |
