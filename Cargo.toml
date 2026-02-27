@@ -7,13 +7,13 @@ authors = ["Luis Otavio <luotasss@gmail.com>"]
 
 description = "A terminal user interface tool to monitor swap, NUMA topology, and GPU memory usage."
 readme = "README.md"
-repository = "https://github.com/luis-ota/swaptop"
+repository = "https://github.com/widefox/nv-swaptop"
 license = "MIT"
 
 keywords = ["swap", "monitor", "numa", "gpu", "tui"]
 categories = ["command-line-utilities", "visualization"]
-homepage = "https://github.com/luis-ota/swaptop"
-documentation = "https://github.com/luis-ota/swaptop"
+homepage = "https://github.com/widefox/nv-swaptop"
+documentation = "https://github.com/widefox/nv-swaptop"
 
 [dependencies]
 ratatui = { version = "0.29.0", features = ["all-widgets"] }
