@@ -1,2 +1,6 @@
 /target
 .idea
+.vscode
+.claude/
+.mcp.json
+PROMPT.md
