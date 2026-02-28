@@ -17,7 +17,7 @@ cargo build --release
 cargo run
 ./target/release/nv-swaptop
 
-# Run all tests (44 unit tests)
+# Run all tests (66 unit tests)
 cargo test
 
 # Run a single test

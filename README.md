@@ -5,10 +5,7 @@ A real-time terminal monitor for **swap usage**, **NUMA topology**, and **GPU me
 ![Badge](https://hitscounter.dev/api/hit?url=https%3A%2F%2Fgithub.com%2Fluis-ota%2Fswaptop&label=views&icon=github&color=%23cfe2ff)
 [![Crates.io](https://img.shields.io/crates/v/nv-swaptop.svg)](https://crates.io/crates/nv-swaptop)
 
-![Swaptop Demo (original version)](docs/swaptop.gif)
-
-> [!NOTE]
-> Screenshot shows the original version. Current version includes NUMA topology with CPU NODE column, GPU memory view, unified CPU+GPU+NUMA view, and NUMA misalignment highlighting.
+![nv-swaptop demo](docs/swaptop-demo.gif)
 
 > [!TIP]
 > Blog post about the original swaptop project: https://blog.wired.rs/posts/swaptop
@@ -83,7 +80,8 @@ cargo build --release
 ## Usage
 
 ```bash
-nv-swaptop
+nv-swaptop          # interactive mode
+nv-swaptop --demo   # auto-cycle all views and quit (for recording)
 ```
 
 ### Keyboard Controls
@@ -205,7 +203,7 @@ src/
     unified_view.rs    # Combined CPU+GPU+NUMA process table
 ```
 
-All data collection is behind a `DataProvider` trait, enabling mock-based testing. Parsing functions are pure (`&str -> T`) for full testability without real hardware. 44 unit tests cover type conversions, aggregation, NUMA/GPU parsing, CPU-to-NUMA mapping, and process merging.
+All data collection is behind a `DataProvider` trait, enabling mock-based testing. Parsing functions are pure (`&str -> T`) for full testability without real hardware. 66 unit tests cover type conversions, aggregation, NUMA/GPU parsing, CPU-to-NUMA mapping, process merging, and demo mode scheduling.
 
 ## Technical Details
 
