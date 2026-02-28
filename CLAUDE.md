@@ -17,7 +17,7 @@ cargo build --release
 cargo run
 ./target/release/nv-swaptop
 
-# Run all tests (37 unit tests)
+# Run all tests (44 unit tests)
 cargo test
 
 # Run a single test
@@ -46,6 +46,7 @@ Linux:
 - **Swap devices**: `/proc/swaps` via `proc-mounts` crate
 - **NUMA topology**: `/sys/devices/system/node/nodeN/meminfo`, `/sys/devices/system/node/nodeN/cpulist`
 - **NUMA per-process**: `/proc/[pid]/numa_maps`
+- **CPU-NUMA mapping**: `/proc/[pid]/stat` field 39 (`processor`) mapped to NUMA node via topology
 - **NUMA availability**: checks `/sys/devices/system/node/node0` exists
 - **GPU**: `nvidia-smi` (resolved from PATH, no hardcoded path)
 - **GPU-NUMA mapping**: `/sys/bus/pci/devices/<pci_bus_id>/numa_node`
@@ -94,7 +95,7 @@ src/
 
 ### Key Design Patterns
 
-- **Pure parsing functions** — GPU and NUMA parsers take `&str` input and return typed data, no I/O. This is how the 37 tests work without real hardware.
+- **Pure parsing functions** — GPU and NUMA parsers take `&str` input and return typed data, no I/O. This is how the 44 tests work without real hardware.
 - **TTL caching** — `App` caches expensive data with different TTLs: NUMA topology (30s), NUMA maps (5s, only when NUMA view active), GPU devices (10s), GPU processes (1s).
 - **Lazy refresh** — NUMA maps only refresh when the NUMA tab is active. GPU data only refreshes when GPU or Unified tab is active.
 - **Unified view merge** — `merge_process_data()` joins swap, GPU, and NUMA data by PID. Detects HBM migration (CPU process with pages on a GPU HBM NUMA node).

@@ -23,6 +23,8 @@ A real-time terminal monitor for **swap usage**, **NUMA topology**, and **GPU me
 - Per-node memory totals and usage
 - CPU list per node
 - Per-process NUMA memory distribution (top 20 swap consumers)
+- CPU NODE column shows which NUMA node each process is executing on
+- Amber highlighting when CPU node differs from dominant memory node (NUMA misalignment)
 - Detects GPU HBM NUMA nodes on NVIDIA Grace Blackwell systems
 
 ### GPU View (Tab 3)
@@ -131,9 +133,10 @@ nv-swaptop
 │     2  GPU HBM     96.00 GB    82.45 GB    (none)      │
 │                                                        │
 │  Per-Process NUMA Distribution (top 20):               │
-│     PID  NAME               Node 0   Node 1   Node 2  │
-│   12045  firefox             45.2%    54.8%     0.0%   │
-│    8923  training_job        12.1%     3.4%    84.5%   │
+│     PID  NAME               CPU  TOTAL PG  N0    N1    │
+│   12045  firefox              1*    15230  6870  8360  │
+│    8923  training_job         0      9840  9200   640  │
+│  * = amber: CPU node ≠ dominant memory node            │
 ╰────────────────────────────────────────────────────────╯
 ```
 
@@ -196,7 +199,7 @@ src/
     unified_view.rs    # Combined CPU+GPU+NUMA process table
 ```
 
-All data collection is behind a `DataProvider` trait, enabling mock-based testing. Parsing functions are pure (`&str -> T`) for full testability without real hardware. 37 unit tests cover type conversions, aggregation, NUMA/GPU parsing, and process merging.
+All data collection is behind a `DataProvider` trait, enabling mock-based testing. Parsing functions are pure (`&str -> T`) for full testability without real hardware. 44 unit tests cover type conversions, aggregation, NUMA/GPU parsing, CPU-to-NUMA mapping, and process merging.
 
 ## Technical Details
 
