@@ -7,6 +7,9 @@ A real-time terminal monitor for **swap usage**, **NUMA topology**, and **GPU me
 
 ![Swaptop Demo (original version)](docs/swaptop.gif)
 
+> [!NOTE]
+> Screenshot shows the original version. Current version includes NUMA topology with CPU NODE column, GPU memory view, unified CPU+GPU+NUMA view, and NUMA misalignment highlighting.
+
 > [!TIP]
 > Blog post about the original swaptop project: https://blog.wired.rs/posts/swaptop
 
@@ -175,6 +178,9 @@ Cycle through 5 themes with `t`:
 5. Nord
 
 ![Swaptop theme Demo](docs/theme-demo.gif)
+
+> [!NOTE]
+> Theme demo shows an earlier version. Current version includes additional columns and views not shown here.
 
 ## Architecture
 
