@@ -5,7 +5,7 @@ A real-time terminal monitor for **swap usage**, **NUMA topology**, and **GPU me
 ![Badge](https://hitscounter.dev/api/hit?url=https%3A%2F%2Fgithub.com%2Fluis-ota%2Fswaptop&label=views&icon=github&color=%23cfe2ff)
 [![Crates.io](https://img.shields.io/crates/v/nv-swaptop.svg)](https://crates.io/crates/nv-swaptop)
 
-![Swaptop Demo](docs/swaptop.gif)
+![Swaptop Demo (original version)](docs/swaptop.gif)
 
 > [!TIP]
 > Blog post about the original swaptop project: https://blog.wired.rs/posts/swaptop
@@ -268,6 +268,13 @@ ls /sys/devices/system/node/
             <img src=https://avatars.githubusercontent.com/u/72219344?v=4 width="100" style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt="RafaelKC"/>
             <br />
             <sub style="font-size:14px"><b>Rafael Chicovis</b></sub>
+        </a>
+    </td>
+    <td align="center" style="word-wrap: break-word; width: 150.0; height: 150.0">
+        <a href=https://github.com/widefox>
+            <img src=https://avatars.githubusercontent.com/u/819378?v=4 width="100" style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt="widefox"/>
+            <br />
+            <sub style="font-size:14px"><b>widefox</b></sub>
         </a>
     </td>
 </tr>
