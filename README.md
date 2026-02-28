@@ -2,7 +2,7 @@
 
 A real-time terminal monitor for **swap usage**, **NUMA topology**, and **GPU memory** on Linux. Built for systems like NVIDIA Grace Blackwell (GB200) where GPU HBM is exposed as a NUMA node — but works on any system with swap.
 
-![Badge](https://hitscounter.dev/api/hit?url=https%3A%2F%2Fgithub.com%2Fluis-ota%2Fswaptop&label=views&icon=github&color=%23cfe2ff)
+![Badge](https://hitscounter.dev/api/hit?url=https%3A%2F%2Fgithub.com%2Fwidefox%2Fnv-swaptop&label=views&icon=github&color=%23cfe2ff)
 [![Crates.io](https://img.shields.io/crates/v/nv-swaptop.svg)](https://crates.io/crates/nv-swaptop)
 
 ![nv-swaptop demo](docs/swaptop-demo.gif)
@@ -78,8 +78,8 @@ cargo install nv-swaptop
 
 ### From source
 ```bash
-git clone https://github.com/luis-ota/swaptop
-cd swaptop
+git clone https://github.com/widefox/nv-swaptop
+cd nv-swaptop
 cargo build --release
 ./target/release/nv-swaptop
 ```
@@ -88,7 +88,6 @@ cargo build --release
 - [Rust 1.88.0+](https://rustup.rs/) (Rust 2024 edition)
 - **Linux**: kernel 4.4+, procfs mounted at `/proc`
 - **GPU features**: `nvidia-smi` in PATH (optional — GPU view degrades gracefully)
-- **Windows** (deprecated): builds are not provided
 
 ## Usage
 
@@ -203,7 +202,7 @@ src/
   data/
     mod.rs             # DataProvider trait, ProcDataProvider, merge_process_data()
     types.rs           # All shared types and pure functions
-    swap.rs            # Swap data collection (Linux/Windows)
+    swap.rs            # Swap data collection
     numa.rs            # NUMA topology parsing (Linux only)
     gpu.rs             # nvidia-smi CSV parsing
   ui/
@@ -221,7 +220,7 @@ All data collection is behind a `DataProvider` trait, enabling mock-based testin
 ## Technical Details
 
 ### Data Sources
-- **Swap**: `/proc/meminfo`, `/proc/[pid]/status` (Linux); `winapi` `GlobalMemoryStatusEx` + `tasklist` crate (Windows)
+- **Swap**: `/proc/meminfo`, `/proc/[pid]/status` via `procfs` crate
 - **Swap devices**: `/proc/swaps` via `proc-mounts` crate (Linux only)
 - **NUMA**: `/sys/devices/system/node/nodeN/meminfo`, `/sys/devices/system/node/nodeN/cpulist`, `/proc/[pid]/numa_maps` (Linux only)
 - **GPU**: `nvidia-smi` (from PATH) `--query-compute-apps` and `--query-gpu` CSV output
