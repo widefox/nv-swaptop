@@ -102,7 +102,16 @@ pub fn parse_numa_maps(content: &str, pid: u32, name: &str) -> ProcessNumaInfo {
         name: name.to_string(),
         pages_per_node,
         total_pages,
+        cpu_node: None,
     }
+}
+
+/// Map a CPU ID to the NUMA node it belongs to.
+pub fn cpu_to_numa_node(cpu_id: i32, numa_nodes: &[NumaNode]) -> Option<u32> {
+    numa_nodes
+        .iter()
+        .find(|n| n.cpus.contains(&(cpu_id as u32)))
+        .map(|n| n.id)
 }
 
 /// Discover NUMA topology by reading sysfs.
@@ -266,6 +275,57 @@ Node 0 MemUsed:         8192000 kB";
         let manual_sum: u64 = info.pages_per_node.values().sum();
         assert_eq!(info.total_pages, manual_sum);
         assert_eq!(info.total_pages, 60);
+    }
+
+    #[test]
+    fn test_process_numa_info_has_cpu_node() {
+        let info = ProcessNumaInfo {
+            pid: 42,
+            name: "test".into(),
+            pages_per_node: HashMap::from([(0, 100), (1, 50)]),
+            total_pages: 150,
+            cpu_node: Some(1),
+        };
+        assert_eq!(info.cpu_node, Some(1));
+    }
+
+    #[test]
+    fn test_parse_numa_maps_cpu_node_is_none() {
+        // parse_numa_maps doesn't know about CPU scheduling, so cpu_node should be None
+        let content = "00400000 default N0=10 N1=5";
+        let info = parse_numa_maps(content, 42, "test_proc");
+        assert_eq!(info.cpu_node, None);
+    }
+
+    #[test]
+    fn test_cpu_to_numa_node_found() {
+        let nodes = vec![
+            NumaNode { id: 0, memory_total_kb: 0, memory_free_kb: 0, cpus: vec![0, 1, 2, 3], node_type: NumaNodeType::Cpu },
+            NumaNode { id: 1, memory_total_kb: 0, memory_free_kb: 0, cpus: vec![4, 5, 6, 7], node_type: NumaNodeType::Cpu },
+        ];
+        assert_eq!(cpu_to_numa_node(0, &nodes), Some(0));
+        assert_eq!(cpu_to_numa_node(3, &nodes), Some(0));
+        assert_eq!(cpu_to_numa_node(4, &nodes), Some(1));
+        assert_eq!(cpu_to_numa_node(7, &nodes), Some(1));
+    }
+
+    #[test]
+    fn test_cpu_to_numa_node_not_found() {
+        let nodes = vec![
+            NumaNode { id: 0, memory_total_kb: 0, memory_free_kb: 0, cpus: vec![0, 1], node_type: NumaNodeType::Cpu },
+        ];
+        assert_eq!(cpu_to_numa_node(99, &nodes), None);
+    }
+
+    #[test]
+    fn test_cpu_to_numa_node_gpu_hbm_skipped() {
+        // GPU HBM nodes have no CPUs, so should never match
+        let nodes = vec![
+            NumaNode { id: 0, memory_total_kb: 0, memory_free_kb: 0, cpus: vec![0, 1], node_type: NumaNodeType::Cpu },
+            NumaNode { id: 2, memory_total_kb: 0, memory_free_kb: 0, cpus: vec![], node_type: NumaNodeType::GpuHbm { gpu_index: 0 } },
+        ];
+        assert_eq!(cpu_to_numa_node(0, &nodes), Some(0));
+        assert_eq!(cpu_to_numa_node(5, &nodes), None);
     }
 
     #[test]

@@ -6,6 +6,8 @@ pub struct ProcessSwapInfo {
     pub pid: u32,
     pub name: String,
     pub swap_size: f64,
+    #[cfg(target_os = "linux")]
+    pub last_cpu: Option<i32>,
 }
 
 #[cfg(target_os = "linux")]
@@ -77,6 +79,7 @@ pub struct ProcessNumaInfo {
     pub name: String,
     pub pages_per_node: HashMap<u32, u64>,
     pub total_pages: u64,
+    pub cpu_node: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -155,6 +158,8 @@ pub fn aggregate_processes(processes: Vec<ProcessSwapInfo>) -> Vec<ProcessSwapIn
             pid: count,
             name,
             swap_size,
+            #[cfg(target_os = "linux")]
+            last_cpu: None,
         })
         .collect();
 
@@ -194,8 +199,8 @@ mod tests {
     #[test]
     fn test_aggregate_dedup() {
         let procs = vec![
-            ProcessSwapInfo { pid: 1, name: "firefox".into(), swap_size: 100.0 },
-            ProcessSwapInfo { pid: 2, name: "firefox".into(), swap_size: 200.0 },
+            ProcessSwapInfo { pid: 1, name: "firefox".into(), swap_size: 100.0, #[cfg(target_os = "linux")] last_cpu: None },
+            ProcessSwapInfo { pid: 2, name: "firefox".into(), swap_size: 200.0, #[cfg(target_os = "linux")] last_cpu: None },
         ];
         let result = aggregate_processes(procs);
         assert_eq!(result.len(), 1);
@@ -207,9 +212,9 @@ mod tests {
     #[test]
     fn test_aggregate_sorted() {
         let procs = vec![
-            ProcessSwapInfo { pid: 1, name: "small".into(), swap_size: 10.0 },
-            ProcessSwapInfo { pid: 2, name: "big".into(), swap_size: 500.0 },
-            ProcessSwapInfo { pid: 3, name: "medium".into(), swap_size: 100.0 },
+            ProcessSwapInfo { pid: 1, name: "small".into(), swap_size: 10.0, #[cfg(target_os = "linux")] last_cpu: None },
+            ProcessSwapInfo { pid: 2, name: "big".into(), swap_size: 500.0, #[cfg(target_os = "linux")] last_cpu: None },
+            ProcessSwapInfo { pid: 3, name: "medium".into(), swap_size: 100.0, #[cfg(target_os = "linux")] last_cpu: None },
         ];
         let result = aggregate_processes(procs);
         assert_eq!(result[0].name, "big");
@@ -220,5 +225,17 @@ mod tests {
     #[test]
     fn test_size_units_default() {
         assert_eq!(SizeUnits::default(), SizeUnits::KB);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_process_swap_info_has_last_cpu() {
+        let info = ProcessSwapInfo {
+            pid: 42,
+            name: "test".into(),
+            swap_size: 100.0,
+            last_cpu: Some(3),
+        };
+        assert_eq!(info.last_cpu, Some(3));
     }
 }

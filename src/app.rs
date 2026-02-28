@@ -243,7 +243,9 @@ impl App {
                         .unwrap_or(std::cmp::Ordering::Equal)
                 });
                 for proc in procs.iter().take(20) {
-                    if let Ok(info) = self.provider.get_process_numa_maps(proc.pid, &proc.name) {
+                    if let Ok(mut info) = self.provider.get_process_numa_maps(proc.pid, &proc.name) {
+                        info.cpu_node = proc.last_cpu
+                            .and_then(|cpu| crate::data::numa::cpu_to_numa_node(cpu, &self.numa_nodes));
                         infos.push(info);
                     }
                 }

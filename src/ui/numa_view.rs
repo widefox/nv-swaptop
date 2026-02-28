@@ -3,8 +3,8 @@ use crate::theme::Theme;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Style, Stylize},
-    text::Line,
+    style::{Color, Style, Stylize},
+    text::{Line, Span},
     widgets::{Block, BorderType, Paragraph},
 };
 
@@ -113,11 +113,13 @@ fn render_process_numa_distribution(
 ) {
     let mut lines = Vec::new();
 
-    // Header: PID | NAME | then one column per NUMA node
+    // Header: PID | PROCESS | CPU | TOTAL PG | N0 | N1 | ...
     let mut header_spans = vec![
         format!("{:>8}", "PID").bold(),
         " | ".into(),
         format!("{:<20}", "PROCESS").bold(),
+        " | ".into(),
+        format!("{:>3}", "CPU").bold(),
         " | ".into(),
         format!("{:>10}", "TOTAL PG").bold(),
     ];
@@ -128,10 +130,35 @@ fn render_process_numa_distribution(
     lines.push(Line::from(header_spans));
 
     for info in process_infos.iter().take(20) {
+        // Determine dominant memory node (node with most pages)
+        let dominant_node = info
+            .pages_per_node
+            .iter()
+            .max_by_key(|(_, v)| **v)
+            .map(|(k, _)| *k);
+
+        // Check misalignment: cpu_node differs from dominant memory node
+        let misaligned = match (info.cpu_node, dominant_node) {
+            (Some(cpu), Some(mem)) => cpu != mem,
+            _ => false,
+        };
+
+        let cpu_str = match info.cpu_node {
+            Some(n) => format!("{:>3}", n),
+            None => format!("{:>3}", "-"),
+        };
+        let cpu_span: Span = if misaligned {
+            Span::styled(cpu_str, Style::default().fg(Color::Rgb(255, 183, 77)))
+        } else {
+            cpu_str.into()
+        };
+
         let mut spans = vec![
             format!("{:>8}", info.pid).into(),
             " | ".into(),
             format!("{:<20}", truncate_name(&info.name, 20)).into(),
+            " | ".into(),
+            cpu_span,
             " | ".into(),
             format!("{:>10}", info.total_pages).into(),
         ];

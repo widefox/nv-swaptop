@@ -31,15 +31,16 @@ pub fn get_processes_using_swap(unit: SizeUnits) -> Result<Vec<ProcessSwapInfo>,
             && let Some(swap_kb) = status.vmswap
             && swap_kb > 0
         {
-            let name = match process.stat() {
-                Ok(stat) => stat.comm,
-                Err(_) => "unknown".to_string(),
+            let (name, last_cpu) = match process.stat() {
+                Ok(stat) => (stat.comm, stat.processor),
+                Err(_) => ("unknown".to_string(), None),
             };
             let swap_size = convert_swap(swap_kb, unit.clone());
             let info = ProcessSwapInfo {
                 pid: pid as u32,
                 name,
                 swap_size,
+                last_cpu,
             };
             swap_processes.push(info);
         }
@@ -80,6 +81,8 @@ pub fn get_processes_using_swap(unit: SizeUnits) -> Result<Vec<ProcessSwapInfo>,
                 pid: task.pid,
                 name: task.pname,
                 swap_size: convert_swap(meminfo.get_pagefile_usage() as u64 / 1024, unit.clone()),
+                #[cfg(target_os = "linux")]
+                last_cpu: None,
             };
             profile_page_processes.push(info);
         }

@@ -147,8 +147,8 @@ impl MockDataProvider {
                 used_swap: 2_000_000,
             },
             processes: vec![
-                ProcessSwapInfo { pid: 1, name: "test_proc".into(), swap_size: 1024.0 },
-                ProcessSwapInfo { pid: 2, name: "another".into(), swap_size: 512.0 },
+                ProcessSwapInfo { pid: 1, name: "test_proc".into(), swap_size: 1024.0, #[cfg(target_os = "linux")] last_cpu: Some(0) },
+                ProcessSwapInfo { pid: 2, name: "another".into(), swap_size: 512.0, #[cfg(target_os = "linux")] last_cpu: Some(1) },
             ],
             #[cfg(target_os = "linux")]
             numa_nodes: vec![
@@ -191,6 +191,7 @@ impl DataProvider for MockDataProvider {
             name: name.to_string(),
             pages_per_node: HashMap::from([(0, 100)]),
             total_pages: 100,
+            cpu_node: None,
         })
     }
 
@@ -368,7 +369,7 @@ mod tests {
 
     #[test]
     fn test_merge_same_pid() {
-        let swap = vec![ProcessSwapInfo { pid: 100, name: "train".into(), swap_size: 1024.0 }];
+        let swap = vec![ProcessSwapInfo { pid: 100, name: "train".into(), swap_size: 1024.0, #[cfg(target_os = "linux")] last_cpu: None }];
         let gpu = vec![GpuProcessInfo { pid: 100, name: "train".into(), gpu_index: 0, gpu_memory_used_kb: 4096 }];
         let result = merge_process_data(&swap, &gpu, &[], &[]);
         assert_eq!(result.len(), 1);
@@ -379,7 +380,7 @@ mod tests {
 
     #[test]
     fn test_cpu_only_process() {
-        let swap = vec![ProcessSwapInfo { pid: 100, name: "bash".into(), swap_size: 512.0 }];
+        let swap = vec![ProcessSwapInfo { pid: 100, name: "bash".into(), swap_size: 512.0, #[cfg(target_os = "linux")] last_cpu: None }];
         let gpu: Vec<GpuProcessInfo> = vec![];
         let result = merge_process_data(&swap, &gpu, &[], &[]);
         assert_eq!(result.len(), 1);
@@ -399,8 +400,8 @@ mod tests {
     #[test]
     fn test_unified_sorting() {
         let swap = vec![
-            ProcessSwapInfo { pid: 1, name: "small".into(), swap_size: 100.0 },
-            ProcessSwapInfo { pid: 2, name: "big".into(), swap_size: 5000.0 },
+            ProcessSwapInfo { pid: 1, name: "small".into(), swap_size: 100.0, #[cfg(target_os = "linux")] last_cpu: None },
+            ProcessSwapInfo { pid: 2, name: "big".into(), swap_size: 5000.0, #[cfg(target_os = "linux")] last_cpu: None },
         ];
         let gpu = vec![
             GpuProcessInfo { pid: 3, name: "gpu_big".into(), gpu_index: 0, gpu_memory_used_kb: 10000 },
@@ -417,8 +418,8 @@ mod tests {
     fn test_aggregate_unified() {
         // merge_process_data handles aggregation by PID (not by name)
         let swap = vec![
-            ProcessSwapInfo { pid: 1, name: "proc".into(), swap_size: 100.0 },
-            ProcessSwapInfo { pid: 2, name: "proc".into(), swap_size: 200.0 },
+            ProcessSwapInfo { pid: 1, name: "proc".into(), swap_size: 100.0, #[cfg(target_os = "linux")] last_cpu: None },
+            ProcessSwapInfo { pid: 2, name: "proc".into(), swap_size: 200.0, #[cfg(target_os = "linux")] last_cpu: None },
         ];
         let gpu: Vec<GpuProcessInfo> = vec![];
         let result = merge_process_data(&swap, &gpu, &[], &[]);
@@ -428,13 +429,14 @@ mod tests {
 
     #[test]
     fn test_hbm_migration_detected() {
-        let swap = vec![ProcessSwapInfo { pid: 100, name: "migrated".into(), swap_size: 1024.0 }];
+        let swap = vec![ProcessSwapInfo { pid: 100, name: "migrated".into(), swap_size: 1024.0, #[cfg(target_os = "linux")] last_cpu: None }];
         let gpu: Vec<GpuProcessInfo> = vec![];
         let numa_infos = vec![ProcessNumaInfo {
             pid: 100,
             name: "migrated".into(),
             pages_per_node: HashMap::from([(0, 500), (2, 100)]), // pages on node 2 (GPU HBM)
             total_pages: 600,
+            cpu_node: None,
         }];
         let numa_nodes = vec![
             NumaNode { id: 0, memory_total_kb: 16_000_000, memory_free_kb: 8_000_000, cpus: vec![0, 1], node_type: NumaNodeType::Cpu },
@@ -448,8 +450,8 @@ mod tests {
     #[test]
     fn test_graceful_no_gpu() {
         let swap = vec![
-            ProcessSwapInfo { pid: 1, name: "proc1".into(), swap_size: 100.0 },
-            ProcessSwapInfo { pid: 2, name: "proc2".into(), swap_size: 200.0 },
+            ProcessSwapInfo { pid: 1, name: "proc1".into(), swap_size: 100.0, #[cfg(target_os = "linux")] last_cpu: None },
+            ProcessSwapInfo { pid: 2, name: "proc2".into(), swap_size: 200.0, #[cfg(target_os = "linux")] last_cpu: None },
         ];
         let gpu: Vec<GpuProcessInfo> = vec![];
         let result = merge_process_data(&swap, &gpu, &[], &[]);
@@ -458,8 +460,39 @@ mod tests {
     }
 
     #[test]
+    fn test_cpu_node_wiring_in_numa_info() {
+        // Verify that when ProcessNumaInfo has cpu_node set, it's visible
+        // This tests the wiring: last_cpu -> cpu_to_numa_node -> cpu_node
+        let numa_nodes = vec![
+            NumaNode { id: 0, memory_total_kb: 0, memory_free_kb: 0, cpus: vec![0, 1, 2, 3], node_type: NumaNodeType::Cpu },
+            NumaNode { id: 1, memory_total_kb: 0, memory_free_kb: 0, cpus: vec![4, 5, 6, 7], node_type: NumaNodeType::Cpu },
+        ];
+
+        // Simulate what refresh_numa_data does: map last_cpu -> cpu_node
+        let last_cpu: Option<i32> = Some(5);  // CPU 5 is on node 1
+        let cpu_node = last_cpu.and_then(|cpu| numa::cpu_to_numa_node(cpu, &numa_nodes));
+        assert_eq!(cpu_node, Some(1));
+
+        // Process has most pages on node 0 but runs on node 1 — misaligned!
+        let mut info = ProcessNumaInfo {
+            pid: 42,
+            name: "misaligned".into(),
+            pages_per_node: HashMap::from([(0, 500), (1, 100)]),
+            total_pages: 600,
+            cpu_node: None,
+        };
+        info.cpu_node = cpu_node;
+        assert_eq!(info.cpu_node, Some(1));
+
+        // Dominant memory node is 0 (500 pages), but cpu_node is 1 — mismatch
+        let dominant_node = info.pages_per_node.iter().max_by_key(|(_, v)| **v).map(|(k, _)| *k);
+        assert_eq!(dominant_node, Some(0));
+        assert_ne!(info.cpu_node, dominant_node); // misaligned!
+    }
+
+    #[test]
     fn test_graceful_no_numa() {
-        let swap = vec![ProcessSwapInfo { pid: 1, name: "proc".into(), swap_size: 100.0 }];
+        let swap = vec![ProcessSwapInfo { pid: 1, name: "proc".into(), swap_size: 100.0, #[cfg(target_os = "linux")] last_cpu: None }];
         let gpu = vec![GpuProcessInfo { pid: 1, name: "proc".into(), gpu_index: 0, gpu_memory_used_kb: 500 }];
         // No NUMA data at all
         let result = merge_process_data(&swap, &gpu, &[], &[]);
