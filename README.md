@@ -45,7 +45,7 @@ A real-time terminal monitor for **swap usage**, **NUMA topology**, and **GPU me
 - Configurable refresh interval (100ms–10s)
 - TTL-based caching for expensive data sources (NUMA topology, nvidia-smi)
 - Linux: x86_64, ARM64 (aarch64), Power (ppc64le)
-- Windows: deprecated (builds still provided but unsupported)
+- Windows: deprecated (builds are not provided)
 
 ## Use Cases
 
@@ -67,7 +67,7 @@ A real-time terminal monitor for **swap usage**, **NUMA topology**, and **GPU me
 | Windows | x86_64 | Deprecated |
 
 > [!WARNING]
-> Windows support is deprecated and will be removed in a future release. Windows builds are still provided but are no longer actively maintained or tested.
+> Windows support is deprecated. Windows builds are not provided.
 
 ## Installation
 
@@ -88,7 +88,7 @@ cargo build --release
 - [Rust 1.88.0+](https://rustup.rs/) (Rust 2024 edition)
 - **Linux**: kernel 4.4+, procfs mounted at `/proc`
 - **GPU features**: `nvidia-smi` in PATH (optional — GPU view degrades gracefully)
-- **Windows** (deprecated): download from [releases](https://github.com/luis-ota/swaptop/releases)
+- **Windows** (deprecated): builds are not provided
 
 ## Usage
 

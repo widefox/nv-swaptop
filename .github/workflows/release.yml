@@ -33,11 +33,6 @@ jobs:
             output_artifact_suffix: linux-ppc64le
             binary_name_suffix: ""
             archive_format: tar.gz
-          - target_os: windows
-            rust_target: x86_64-pc-windows-gnu
-            output_artifact_suffix: windows-amd64
-            binary_name_suffix: ".exe"
-            archive_format: zip
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -54,12 +49,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ${{ matrix.cross_pkg }}
-
-      - name: Install MinGW-w64 (for Windows cross-compile)
-        if: matrix.target_os == 'windows'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y mingw-w64
 
       - name: Install jq (for parsing Cargo.toml metadata)
         run: sudo apt-get update && sudo apt-get install -y jq
@@ -95,13 +84,6 @@ jobs:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross_linker }}
           CARGO_TARGET_POWERPC64LE_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross_linker }}
 
-      - name: Build for Windows (cross-compile)
-        if: matrix.target_os == 'windows'
-        run: cargo build --release --target ${{ matrix.rust_target }}
-        env:
-          RUSTFLAGS: -C strip=symbols
-          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
-
       - name: Determine Binary Path and Archive Name
         id: binary_info
         shell: bash
@@ -118,27 +100,15 @@ jobs:
 
           BINARY_PATH=""
 
-          if [[ "${{ matrix.target_os }}" == "linux" && -z "${{ matrix.rust_target }}" ]]; then
-            BINARY_PATH="target/release/${CRATE_NAME}${{ matrix.binary_name_suffix }}"
-          elif [[ "${{ matrix.target_os }}" == "linux" && -n "${{ matrix.rust_target }}" ]]; then
-            BINARY_PATH="target/${{ matrix.rust_target }}/release/${CRATE_NAME}${{ matrix.binary_name_suffix }}"
-          elif [[ "${{ matrix.target_os }}" == "windows" ]]; then
-            BINARY_PATH="target/${{ matrix.rust_target }}/release/${CRATE_NAME}${{ matrix.binary_name_suffix }}"
+          if [[ -z "${{ matrix.rust_target }}" ]]; then
+            BINARY_PATH="target/release/${CRATE_NAME}"
           else
-            echo "::error::Unknown matrix.target_os: ${{ matrix.target_os }}"
-            exit 1
+            BINARY_PATH="target/${{ matrix.rust_target }}/release/${CRATE_NAME}"
           fi
 
           echo "Determined Binary Path: '${BINARY_PATH}'"
 
-          if [[ -z "${BINARY_PATH}" ]]; then
-            echo "::error::BINARY_PATH is empty. This should not happen."
-            exit 1
-          fi
-          if [[ ! -f "${BINARY_PATH}" && "${{ matrix.target_os }}" == "windows" && -f "target/${{ matrix.rust_target }}/release/${CRATE_NAME}.exe" ]]; then
-             echo "::warning::Expected BINARY_PATH not found, but found .exe directly. Forcing .exe suffix."
-             BINARY_PATH="target/${{ matrix.rust_target }}/release/${CRATE_NAME}.exe"
-          elif [[ ! -f "${BINARY_PATH}" ]]; then
+          if [[ ! -f "${BINARY_PATH}" ]]; then
              echo "::error::Binary file not found at expected path: ${BINARY_PATH}"
              echo "Listing target directory contents:"
              ls -R target/
@@ -158,22 +128,13 @@ jobs:
 
           mkdir -p "${STAGING_DIR}"
 
-          COMPILED_BINARY_FILENAME="${CRATE_NAME}${{ matrix.binary_name_suffix }}"
-
-          echo "Copying '${BINARY_PATH}' to '${STAGING_DIR}/${COMPILED_BINARY_FILENAME}'"
-          cp "${BINARY_PATH}" "${STAGING_DIR}/${COMPILED_BINARY_FILENAME}"
+          echo "Copying '${BINARY_PATH}' to '${STAGING_DIR}/${CRATE_NAME}'"
+          cp "${BINARY_PATH}" "${STAGING_DIR}/${CRATE_NAME}"
 
           cp README.md LICENSE "${STAGING_DIR}/" 2>/dev/null || true
 
-          FINAL_ARCHIVE_NAME=""
-          if [[ "${{ matrix.archive_format }}" == "tar.gz" ]]; then
-            FINAL_ARCHIVE_NAME="${ARCHIVE_BASENAME}.tar.gz"
-            tar -czvf "${FINAL_ARCHIVE_NAME}" -C "${STAGING_DIR}" .
-          elif [[ "${{ matrix.archive_format }}" == "zip" ]]; then
-            FINAL_ARCHIVE_NAME="${ARCHIVE_BASENAME}.zip"
-            if ! command -v zip &> /dev/null; then sudo apt-get update && sudo apt-get install -y zip; fi
-            (cd "${STAGING_DIR}" && zip -r "../${FINAL_ARCHIVE_NAME}" .)
-          fi
+          FINAL_ARCHIVE_NAME="${ARCHIVE_BASENAME}.tar.gz"
+          tar -czvf "${FINAL_ARCHIVE_NAME}" -C "${STAGING_DIR}" .
 
           echo "Created archive: ${FINAL_ARCHIVE_NAME}"
           ls -lh "${FINAL_ARCHIVE_NAME}"
@@ -236,6 +197,6 @@ jobs:
             Built from commit: ${{ github.sha }}
             Commit message: ${{ github.event.head_commit.message }}
 
-            See attached assets for Linux (amd64, arm64, ppc64le) and Windows (deprecated).
+            See attached assets for Linux (amd64, arm64, ppc64le).
           files: |
             release-assets/*/*
