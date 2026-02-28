@@ -1,6 +1,6 @@
 # nv-swaptop
 
-A real-time terminal monitor for **swap usage**, **NUMA topology**, and **GPU memory** on Linux and Windows. Built for systems like NVIDIA Grace Blackwell (GB200) where GPU HBM is exposed as a NUMA node — but works on any system with swap.
+A real-time terminal monitor for **swap usage**, **NUMA topology**, and **GPU memory** on Linux. Built for systems like NVIDIA Grace Blackwell (GB200) where GPU HBM is exposed as a NUMA node — but works on any system with swap.
 
 ![Badge](https://hitscounter.dev/api/hit?url=https%3A%2F%2Fgithub.com%2Fluis-ota%2Fswaptop&label=views&icon=github&color=%23cfe2ff)
 [![Crates.io](https://img.shields.io/crates/v/nv-swaptop.svg)](https://crates.io/crates/nv-swaptop)
@@ -44,7 +44,8 @@ A real-time terminal monitor for **swap usage**, **NUMA topology**, and **GPU me
 - Unit conversion (KB/MB/GB)
 - Configurable refresh interval (100ms–10s)
 - TTL-based caching for expensive data sources (NUMA topology, nvidia-smi)
-- Cross-platform: Linux and Windows
+- Linux: x86_64, ARM64 (aarch64), Power (ppc64le)
+- Windows: deprecated (builds still provided but unsupported)
 
 ## Use Cases
 
@@ -55,6 +56,18 @@ A real-time terminal monitor for **swap usage**, **NUMA topology**, and **GPU me
 **GPU workstation monitoring** — See GPU VRAM usage alongside swap consumption. Identify processes that are both swapping and using GPU memory. Useful for ML training, rendering, and simulation workloads.
 
 **NUMA-aware debugging** — Understand memory locality of your processes across NUMA nodes. Identify processes with memory spread across multiple nodes (potential performance issue).
+
+## Supported Platforms
+
+| Platform | Architecture | Status |
+|---|---|---|
+| Linux | x86_64 (amd64) | Supported |
+| Linux | ARM64 (aarch64) | Supported |
+| Linux | Power (ppc64le) | Supported |
+| Windows | x86_64 | Deprecated |
+
+> [!WARNING]
+> Windows support is deprecated and will be removed in a future release. Windows builds are still provided but are no longer actively maintained or tested.
 
 ## Installation
 
@@ -75,7 +88,7 @@ cargo build --release
 - [Rust 1.88.0+](https://rustup.rs/) (Rust 2024 edition)
 - **Linux**: kernel 4.4+, procfs mounted at `/proc`
 - **GPU features**: `nvidia-smi` in PATH (optional — GPU view degrades gracefully)
-- **Windows**: download from [releases](https://github.com/luis-ota/swaptop/releases)
+- **Windows** (deprecated): download from [releases](https://github.com/luis-ota/swaptop/releases)
 
 ## Usage
 

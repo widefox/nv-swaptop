@@ -10,13 +10,27 @@ env:
 
 jobs:
   build:
-    name: Build for ${{ matrix.target_os }}
+    name: Build for ${{ matrix.output_artifact_suffix }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
           - target_os: linux
             output_artifact_suffix: linux-amd64
+            binary_name_suffix: ""
+            archive_format: tar.gz
+          - target_os: linux
+            rust_target: aarch64-unknown-linux-gnu
+            cross_linker: aarch64-linux-gnu-gcc
+            cross_pkg: gcc-aarch64-linux-gnu
+            output_artifact_suffix: linux-arm64
+            binary_name_suffix: ""
+            archive_format: tar.gz
+          - target_os: linux
+            rust_target: powerpc64le-unknown-linux-gnu
+            cross_linker: powerpc64le-linux-gnu-gcc
+            cross_pkg: gcc-powerpc64le-linux-gnu
+            output_artifact_suffix: linux-ppc64le
             binary_name_suffix: ""
             archive_format: tar.gz
           - target_os: windows
@@ -34,6 +48,12 @@ jobs:
           components: rustfmt, clippy
           toolchain: stable
           target: ${{ matrix.rust_target }}
+
+      - name: Install cross-compilation toolchain
+        if: matrix.cross_pkg != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.cross_pkg }}
 
       - name: Install MinGW-w64 (for Windows cross-compile)
         if: matrix.target_os == 'windows'
@@ -62,10 +82,18 @@ jobs:
           echo "crate_name_output=${CRATE_NAME_SANITIZED}" >> $GITHUB_OUTPUT
 
       - name: Build for Linux (native)
-        if: matrix.target_os == 'linux'
+        if: matrix.target_os == 'linux' && matrix.rust_target == ''
         run: cargo build --release
         env:
           RUSTFLAGS: -C strip=symbols
+
+      - name: Build for Linux (cross-compile)
+        if: matrix.target_os == 'linux' && matrix.rust_target != ''
+        run: cargo build --release --target ${{ matrix.rust_target }}
+        env:
+          RUSTFLAGS: -C strip=symbols
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross_linker }}
+          CARGO_TARGET_POWERPC64LE_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross_linker }}
 
       - name: Build for Windows (cross-compile)
         if: matrix.target_os == 'windows'
@@ -90,8 +118,10 @@ jobs:
 
           BINARY_PATH=""
 
-          if [[ "${{ matrix.target_os }}" == "linux" ]]; then
+          if [[ "${{ matrix.target_os }}" == "linux" && -z "${{ matrix.rust_target }}" ]]; then
             BINARY_PATH="target/release/${CRATE_NAME}${{ matrix.binary_name_suffix }}"
+          elif [[ "${{ matrix.target_os }}" == "linux" && -n "${{ matrix.rust_target }}" ]]; then
+            BINARY_PATH="target/${{ matrix.rust_target }}/release/${CRATE_NAME}${{ matrix.binary_name_suffix }}"
           elif [[ "${{ matrix.target_os }}" == "windows" ]]; then
             BINARY_PATH="target/${{ matrix.rust_target }}/release/${CRATE_NAME}${{ matrix.binary_name_suffix }}"
           else
@@ -152,7 +182,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.target_os }}-build-${{ env.CRATE_NAME }}-${{ github.ref_name }}
+          name: ${{ matrix.output_artifact_suffix }}-build-${{ env.CRATE_NAME }}-${{ github.ref_name }}
           path: ${{ env.ARCHIVE_FILE_PATH }}
           if-no-files-found: error
 
@@ -206,6 +236,6 @@ jobs:
             Built from commit: ${{ github.sha }}
             Commit message: ${{ github.event.head_commit.message }}
 
-            See attached assets for Linux and Windows.
+            See attached assets for Linux (amd64, arm64, ppc64le) and Windows (deprecated).
           files: |
             release-assets/*/*
