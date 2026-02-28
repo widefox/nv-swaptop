@@ -81,6 +81,8 @@ pub struct App {
     gpu_processes: Vec<GpuProcessInfo>,
     unified_procs: Vec<UnifiedProcessInfo>,
     sort_column: SortColumn,
+    demo: bool,
+    demo_start: Option<Instant>,
     // Cache timestamps
     #[cfg(target_os = "linux")]
     numa_topology_last: Option<Instant>,
@@ -91,7 +93,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(provider: Box<dyn DataProvider>) -> Self {
+    pub fn new(provider: Box<dyn DataProvider>, demo: bool) -> Self {
         Self {
             provider,
             running: false,
@@ -117,6 +119,8 @@ impl App {
             gpu_processes: Vec::new(),
             unified_procs: Vec::new(),
             sort_column: SortColumn::Swap,
+            demo,
+            demo_start: None,
             #[cfg(target_os = "linux")]
             numa_topology_last: None,
             #[cfg(target_os = "linux")]
@@ -129,6 +133,9 @@ impl App {
     #[cfg(target_os = "linux")]
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         self.running = true;
+        if self.demo {
+            self.demo_start = Some(Instant::now());
+        }
         self.swap_processes_lines = ui::process_list::create_process_lines(
             self.provider.as_ref(),
             &self.swap_size_unit,
@@ -167,6 +174,7 @@ impl App {
             }
 
             terminal.draw(|frame| self.render(frame))?;
+            self.demo_auto_cycle();
         }
         Ok(())
     }
@@ -174,6 +182,9 @@ impl App {
     #[cfg(target_os = "windows")]
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         self.running = true;
+        if self.demo {
+            self.demo_start = Some(Instant::now());
+        }
         self.swap_processes_lines = ui::process_list::create_process_lines(
             self.provider.as_ref(),
             &self.swap_size_unit,
@@ -201,6 +212,7 @@ impl App {
             }
 
             terminal.draw(|frame| self.render(frame))?;
+            self.demo_auto_cycle();
         }
         Ok(())
     }
@@ -760,7 +772,218 @@ impl App {
         }
     }
 
+    fn demo_auto_cycle(&mut self) {
+        let Some(start) = self.demo_start else { return };
+        match demo_view_for_elapsed(start.elapsed().as_secs()) {
+            Some(view) => {
+                if self.active_view != view {
+                    self.active_view = view;
+                }
+            }
+            None => self.running = false,
+        }
+    }
+
     fn quit(&mut self) {
         self.running = false;
+    }
+}
+
+/// Returns the demo view for a given elapsed time in seconds,
+/// or None if the demo should quit.
+fn demo_view_for_elapsed(secs: u64) -> Option<ActiveView> {
+    match secs {
+        0..4 => Some(ActiveView::Swap),
+        4..8 => {
+            #[cfg(target_os = "linux")]
+            { Some(ActiveView::Numa) }
+            #[cfg(not(target_os = "linux"))]
+            { Some(ActiveView::Gpu) }
+        }
+        8..12 => Some(ActiveView::Gpu),
+        12..16 => Some(ActiveView::Unified),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data::MockDataProvider;
+
+    fn make_app(demo: bool) -> App {
+        App::new(Box::new(MockDataProvider::new()), demo)
+    }
+
+    // --- App construction tests ---
+
+    #[test]
+    fn test_new_demo_false() {
+        let app = make_app(false);
+        assert!(!app.demo);
+        assert!(app.demo_start.is_none());
+    }
+
+    #[test]
+    fn test_new_demo_true() {
+        let app = make_app(true);
+        assert!(app.demo);
+        assert!(app.demo_start.is_none()); // set in run(), not new()
+    }
+
+    #[test]
+    fn test_new_default_view_is_swap() {
+        let app = make_app(false);
+        assert_eq!(app.active_view, ActiveView::Swap);
+    }
+
+    // --- demo_view_for_elapsed pure logic tests ---
+
+    #[test]
+    fn test_demo_view_swap_at_0s() {
+        assert_eq!(demo_view_for_elapsed(0), Some(ActiveView::Swap));
+    }
+
+    #[test]
+    fn test_demo_view_swap_at_3s() {
+        assert_eq!(demo_view_for_elapsed(3), Some(ActiveView::Swap));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_demo_view_numa_at_4s() {
+        assert_eq!(demo_view_for_elapsed(4), Some(ActiveView::Numa));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_demo_view_numa_at_7s() {
+        assert_eq!(demo_view_for_elapsed(7), Some(ActiveView::Numa));
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn test_demo_view_gpu_at_4s_windows() {
+        assert_eq!(demo_view_for_elapsed(4), Some(ActiveView::Gpu));
+    }
+
+    #[test]
+    fn test_demo_view_gpu_at_8s() {
+        assert_eq!(demo_view_for_elapsed(8), Some(ActiveView::Gpu));
+    }
+
+    #[test]
+    fn test_demo_view_gpu_at_11s() {
+        assert_eq!(demo_view_for_elapsed(11), Some(ActiveView::Gpu));
+    }
+
+    #[test]
+    fn test_demo_view_unified_at_12s() {
+        assert_eq!(demo_view_for_elapsed(12), Some(ActiveView::Unified));
+    }
+
+    #[test]
+    fn test_demo_view_unified_at_15s() {
+        assert_eq!(demo_view_for_elapsed(15), Some(ActiveView::Unified));
+    }
+
+    #[test]
+    fn test_demo_view_quit_at_16s() {
+        assert!(demo_view_for_elapsed(16).is_none());
+    }
+
+    #[test]
+    fn test_demo_view_quit_at_100s() {
+        assert!(demo_view_for_elapsed(100).is_none());
+    }
+
+    // --- demo_auto_cycle integration tests (with App state) ---
+
+    #[test]
+    fn test_demo_auto_cycle_noop_when_not_demo() {
+        let mut app = make_app(false);
+        app.running = true;
+        app.demo_auto_cycle();
+        // Should remain on Swap, still running
+        assert_eq!(app.active_view, ActiveView::Swap);
+        assert!(app.running);
+    }
+
+    #[test]
+    fn test_demo_auto_cycle_switches_view() {
+        let mut app = make_app(true);
+        app.running = true;
+        // Simulate demo_start 9 seconds ago -> should be GPU view
+        app.demo_start = Some(Instant::now() - Duration::from_secs(9));
+        app.demo_auto_cycle();
+        assert_eq!(app.active_view, ActiveView::Gpu);
+        assert!(app.running);
+    }
+
+    #[test]
+    fn test_demo_auto_cycle_quits_after_16s() {
+        let mut app = make_app(true);
+        app.running = true;
+        app.demo_start = Some(Instant::now() - Duration::from_secs(17));
+        app.demo_auto_cycle();
+        assert!(!app.running);
+    }
+
+    #[test]
+    fn test_demo_auto_cycle_no_change_same_view() {
+        let mut app = make_app(true);
+        app.running = true;
+        // 1 second in -> Swap view, which is already the default
+        app.demo_start = Some(Instant::now() - Duration::from_secs(1));
+        app.active_view = ActiveView::Swap;
+        app.demo_auto_cycle();
+        assert_eq!(app.active_view, ActiveView::Swap);
+        assert!(app.running);
+    }
+
+    // --- Boundary tests: every transition point ---
+
+    #[test]
+    fn test_demo_boundary_3_to_4() {
+        // 3s = Swap, 4s = next view (NUMA on Linux, GPU on Windows)
+        assert_eq!(demo_view_for_elapsed(3), Some(ActiveView::Swap));
+        let at_4 = demo_view_for_elapsed(4).unwrap();
+        assert_ne!(at_4, ActiveView::Swap);
+    }
+
+    #[test]
+    fn test_demo_boundary_7_to_8() {
+        let at_7 = demo_view_for_elapsed(7).unwrap();
+        assert_eq!(demo_view_for_elapsed(8), Some(ActiveView::Gpu));
+        assert_ne!(at_7, ActiveView::Gpu);
+    }
+
+    #[test]
+    fn test_demo_boundary_11_to_12() {
+        assert_eq!(demo_view_for_elapsed(11), Some(ActiveView::Gpu));
+        assert_eq!(demo_view_for_elapsed(12), Some(ActiveView::Unified));
+    }
+
+    #[test]
+    fn test_demo_boundary_15_to_16() {
+        assert_eq!(demo_view_for_elapsed(15), Some(ActiveView::Unified));
+        assert!(demo_view_for_elapsed(16).is_none());
+    }
+
+    // --- Full sequence test ---
+
+    #[test]
+    fn test_demo_full_sequence() {
+        let views: Vec<_> = [0, 4, 8, 12].iter()
+            .map(|&s| demo_view_for_elapsed(s).unwrap())
+            .collect();
+        assert_eq!(views[0], ActiveView::Swap);
+        #[cfg(target_os = "linux")]
+        assert_eq!(views[1], ActiveView::Numa);
+        #[cfg(not(target_os = "linux"))]
+        assert_eq!(views[1], ActiveView::Gpu);
+        assert_eq!(views[2], ActiveView::Gpu);
+        assert_eq!(views[3], ActiveView::Unified);
+        assert!(demo_view_for_elapsed(16).is_none());
     }
 }
