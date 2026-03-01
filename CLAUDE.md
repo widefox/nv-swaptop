@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-nv-swaptop is a real-time TUI (terminal user interface) monitor for swap usage, NUMA topology, and GPU memory on Linux and Windows. Built with Rust 2024 edition using ratatui for the terminal UI. Designed for systems like NVIDIA Grace Blackwell (GB200) where GPU HBM is exposed as a NUMA node, but works on any system with swap.
+nv-swaptop is a real-time TUI (terminal user interface) monitor for swap usage, NUMA topology, and GPU memory on Linux. Built with Rust 2024 edition using ratatui for the terminal UI. Designed for systems like NVIDIA Grace Blackwell (GB200) where GPU HBM is exposed as a NUMA node, but works on any system with swap.
 
 ## Build and Development Commands
 
@@ -51,7 +51,7 @@ Linux:
 - **GPU**: `nvidia-smi` (resolved from PATH, no hardcoded path)
 - **GPU-NUMA mapping**: `/sys/bus/pci/devices/<pci_bus_id>/numa_node`
 
-Windows:
+Windows (deprecated, code exists but not built or supported):
 - **Swap**: `winapi` `GlobalMemoryStatusEx` (totals), `tasklist` crate (per-process pagefile)
 - **GPU**: same `nvidia-smi` from PATH
 
@@ -65,7 +65,7 @@ Windows:
 
 Heavy use of `#[cfg(target_os = "linux")]` / `#[cfg(target_os = "windows")]` throughout. Key differences:
 - Linux: has NUMA view (Tab 2), swap device listing, uses `procfs`/`proc-mounts` crates
-- Windows: uses `winapi`/`tasklist`/`sysinfo` crates, no NUMA support
+- Windows (deprecated): uses `winapi`/`tasklist` crates, no NUMA support
 - Both: swap view, GPU view, unified view
 
 Functions that differ by platform are implemented as separate `#[cfg(...)]` blocks rather than runtime detection. This includes `App::run()`, `App::render()`, `App::on_key_event()`, `merge_process_data()`, and the `SwapDataError` enum.
@@ -80,7 +80,7 @@ src/
   data/
     mod.rs             # DataProvider trait, ProcDataProvider, MockDataProvider, merge_process_data()
     types.rs           # All shared types and pure utility functions (convert_swap, aggregate_processes)
-    swap.rs            # Swap data from /proc/meminfo (Linux) or sysinfo (Windows)
+    swap.rs            # Swap data from /proc/meminfo (Linux) or winapi (Windows, deprecated)
     numa.rs            # Pure NUMA parsing (meminfo, cpulist, numa_maps); sysfs topology discovery
     gpu.rs             # nvidia-smi CSV parsing; all parsing is pure &str -> T for testability
   ui/
@@ -95,11 +95,11 @@ src/
 
 ### Key Design Patterns
 
-- **Pure parsing functions** — GPU and NUMA parsers take `&str` input and return typed data, no I/O. This is how the 44 tests work without real hardware.
+- **Pure parsing functions** — GPU and NUMA parsers take `&str` input and return typed data, no I/O. This is how the 66 tests work without real hardware.
 - **TTL caching** — `App` caches expensive data with different TTLs: NUMA topology (30s), NUMA maps (5s, only when NUMA view active), GPU devices (10s), GPU processes (1s).
 - **Lazy refresh** — NUMA maps only refresh when the NUMA tab is active. GPU data only refreshes when GPU or Unified tab is active.
 - **Unified view merge** — `merge_process_data()` joins swap, GPU, and NUMA data by PID. Detects HBM migration (CPU process with pages on a GPU HBM NUMA node).
 
 ### CI/CD
 
-GitHub Actions workflow (`.github/workflows/release.yml`) triggers on `v*.*.*` tags. Cross-compiles for Linux (native) and Windows (MinGW). Creates GitHub release with archived binaries.
+GitHub Actions workflow (`.github/workflows/release.yml`) triggers on `v*.*.*` tags. Builds for Linux (amd64 native, arm64/ppc64le/riscv64/s390x cross-compile, loongarch64 via `cross` tool). Creates GitHub release with archived binaries.

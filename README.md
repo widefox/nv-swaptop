@@ -42,7 +42,7 @@ A real-time terminal monitor for **swap usage**, **NUMA topology**, and **GPU me
 ### General
 - Multiple color themes (Default, Solarized, Monokai, Dracula, Nord)
 - Unit conversion (KB/MB/GB)
-- Configurable refresh interval (100ms–10s)
+- Configurable refresh interval (1ms–10s)
 - TTL-based caching for expensive data sources (NUMA topology, nvidia-smi)
 - Linux: x86_64, ARM64, Power, RISC-V, s390x, LoongArch
 - Windows: deprecated (builds are not provided)
