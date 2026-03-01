@@ -10,6 +10,14 @@ use ratatui::{
     widgets::{Block, BorderType, Paragraph},
 };
 
+// NUMA memory locality colour constants
+#[cfg(target_os = "linux")]
+const COLOR_LOCAL_GREEN: Color = Color::Rgb(80, 200, 120);
+#[cfg(target_os = "linux")]
+const COLOR_REMOTE_ORANGE: Color = Color::Rgb(255, 183, 77);
+#[cfg(target_os = "linux")]
+const COLOR_HBM_RED: Color = Color::Rgb(255, 85, 85);
+
 #[cfg(target_os = "linux")]
 pub fn render_unified_view(
     frame: &mut Frame,
@@ -96,7 +104,8 @@ pub fn render_unified_view(
                 format!("{:>5}", gpu_n_str).into(),
             ];
 
-            // Per-node memory columns
+            // Per-node memory columns with locality colouring:
+            //   green = local CPU node, orange = remote CPU node, red = GPU HBM
             for &node_id in &node_ids {
                 let kb = proc.kb_per_node.get(&node_id).copied().unwrap_or(0);
                 let cell = if kb > 0 {
@@ -105,14 +114,16 @@ pub fn render_unified_view(
                     "-".to_string()
                 };
                 spans.push(" ".into());
-                // Color HBM node values with orange
-                let is_hbm = numa_nodes.iter().any(|n| {
-                    n.id == node_id && matches!(n.node_type, NumaNodeType::GpuHbm { .. })
-                });
-                if is_hbm && kb > 0 {
+                if kb > 0 {
+                    let node_type = numa_nodes.iter().find(|n| n.id == node_id).map(|n| &n.node_type);
+                    let color = match node_type {
+                        Some(NumaNodeType::GpuHbm { .. }) => COLOR_HBM_RED,
+                        Some(NumaNodeType::Cpu) if proc.cpu_nodes.contains(&node_id) => COLOR_LOCAL_GREEN,
+                        _ => COLOR_REMOTE_ORANGE,
+                    };
                     spans.push(Span::styled(
                         format!("{:>9}", cell),
-                        Style::default().fg(Color::Rgb(255, 183, 77)),
+                        Style::default().fg(color),
                     ));
                 } else {
                     spans.push(format!("{:>9}", cell).into());
@@ -138,8 +149,15 @@ pub fn render_unified_view(
                 .bold(),
         )
         .title(
-            Line::from(" (orange = HBM migration) ")
-                .fg(Color::Rgb(255, 183, 77))
+            Line::from(vec![
+                Span::raw(" "),
+                Span::styled("local", Style::default().fg(COLOR_LOCAL_GREEN)),
+                Span::raw("  "),
+                Span::styled("remote", Style::default().fg(COLOR_REMOTE_ORANGE)),
+                Span::raw("  "),
+                Span::styled("GPU HBM", Style::default().fg(COLOR_HBM_RED)),
+                Span::raw(" "),
+            ])
                 .right_aligned(),
         );
 

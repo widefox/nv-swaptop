@@ -9,6 +9,11 @@ use ratatui::{
     widgets::{Block, BorderType, Paragraph},
 };
 
+// NUMA memory locality colour constants
+const COLOR_LOCAL_GREEN: Color = Color::Rgb(80, 200, 120);
+const COLOR_REMOTE_ORANGE: Color = Color::Rgb(255, 183, 77);
+const COLOR_HBM_RED: Color = Color::Rgb(255, 85, 85);
+
 pub fn render_numa_view(
     frame: &mut Frame,
     area: Rect,
@@ -173,7 +178,19 @@ fn render_process_numa_distribution(
                 "-".to_string()
             };
             spans.push(" | ".into());
-            spans.push(format!("{:>10}", cell).into());
+            if kb > 0 {
+                let color = match &node.node_type {
+                    NumaNodeType::GpuHbm { .. } => COLOR_HBM_RED,
+                    NumaNodeType::Cpu if info.cpu_node == Some(node.id) => COLOR_LOCAL_GREEN,
+                    _ => COLOR_REMOTE_ORANGE,
+                };
+                spans.push(Span::styled(
+                    format!("{:>10}", cell),
+                    Style::default().fg(color),
+                ));
+            } else {
+                spans.push(format!("{:>10}", cell).into());
+            }
         }
         lines.push(Line::from(spans));
     }
@@ -190,6 +207,18 @@ fn render_process_numa_distribution(
             Line::from(" Per-Process NUMA Distribution (top 20 swap consumers) ")
                 .fg(theme.primary)
                 .bold(),
+        )
+        .title(
+            Line::from(vec![
+                Span::raw(" "),
+                Span::styled("local", Style::default().fg(COLOR_LOCAL_GREEN)),
+                Span::raw("  "),
+                Span::styled("remote", Style::default().fg(COLOR_REMOTE_ORANGE)),
+                Span::raw("  "),
+                Span::styled("GPU HBM", Style::default().fg(COLOR_HBM_RED)),
+                Span::raw(" "),
+            ])
+                .right_aligned(),
         );
 
     let para = Paragraph::new(lines).block(block).centered();

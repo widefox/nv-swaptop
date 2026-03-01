@@ -562,8 +562,8 @@ fn test_render_unified_view_gb200() {
 }
 
 #[test]
-fn test_render_unified_view_hbm_orange_style() {
-    // Verify that cells for HBM NUMA nodes with kb > 0 get the orange color (255, 183, 77)
+fn test_render_unified_view_hbm_red_local_green_style() {
+    // Verify the new colour scheme: HBM=red, local CPU=green, remote CPU=orange
     use ratatui::style::Color;
 
     let mut terminal = make_test_terminal();
@@ -574,7 +574,7 @@ fn test_render_unified_view_hbm_orange_style() {
         NumaNode { id: 2, memory_total_kb: 81_920_000, memory_free_kb: 40_960_000, cpus: vec![], node_type: NumaNodeType::GpuHbm { gpu_index: 0 } },
     ];
 
-    // CPU process with pages on the HBM node — should trigger orange styling
+    // CPU process with pages on node 0 (local) and HBM node 2
     let procs = vec![UnifiedProcessInfo {
         pid: 500,
         name: "migrated_app".into(),
@@ -601,20 +601,301 @@ fn test_render_unified_view_hbm_orange_style() {
         .unwrap();
 
     let buf = terminal.backend().buffer().clone();
-    let orange = Color::Rgb(255, 183, 77);
+    let red = Color::Rgb(255, 85, 85);
+    let green = Color::Rgb(80, 200, 120);
 
-    // Find any cell with the orange foreground color — the HBM column value (50000 KB)
-    let has_orange_cell = buf.content().iter().any(|cell| cell.fg == orange);
+    // HBM column value (50000 KB) should be red
+    let has_red_cell = buf.content().iter().any(|cell| cell.fg == red);
     assert!(
-        has_orange_cell,
-        "Expected orange (255,183,77) foreground on HBM node cell with kb > 0"
+        has_red_cell,
+        "Expected red (255,85,85) foreground on HBM node cell with kb > 0"
     );
 
-    // Also verify that the CPU node column (N0) does NOT have orange
-    // The "50000 KB" value should be orange, but "2000 KB" should not
+    // Local CPU node column (N0, 2000 KB) should be green
+    let has_green_cell = buf.content().iter().any(|cell| cell.fg == green);
+    assert!(
+        has_green_cell,
+        "Expected green (80,200,120) foreground on local CPU node cell with kb > 0"
+    );
+
     let content: String = buf.content().iter().map(|c| c.symbol().to_string()).collect();
     assert!(content.contains("50000"));
     assert!(content.contains("2000"));
+}
+
+#[test]
+fn test_unit_controls_affect_all_views() {
+    // Regression: unit controls (k/m/g) must work in NUMA, GPU, and Unified views
+    let mut terminal = make_test_terminal();
+    let theme = Theme::from(ThemeType::Dracula);
+    let mock = make_rich_mock();
+
+    // NUMA view with MB
+    terminal
+        .draw(|frame| {
+            let infos = vec![ProcessNumaInfo {
+                pid: 42,
+                name: "test_proc".into(),
+                kb_per_node: HashMap::from([(0, 2048)]),
+                total_kb: 2048,
+                cpu_node: Some(0),
+            }];
+            ui::numa_view::render_numa_view(
+                frame,
+                frame.area(),
+                &theme,
+                &mock.numa_nodes,
+                &infos,
+                true,
+                &SizeUnits::MB,
+            );
+        })
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let content: String = buf.content().iter().map(|c| c.symbol().to_string()).collect();
+    assert!(content.contains("MB"), "NUMA view should display MB units");
+
+    // GPU view with GB
+    terminal
+        .draw(|frame| {
+            ui::gpu_view::render_gpu_view(
+                frame,
+                frame.area(),
+                &theme,
+                &mock.gpu_devices,
+                &mock.gpu_processes,
+                true,
+                &SizeUnits::GB,
+            );
+        })
+        .unwrap();
+    let buf = terminal.backend().buffer().clone();
+    let content: String = buf.content().iter().map(|c| c.symbol().to_string()).collect();
+    assert!(content.contains("GB"), "GPU view should display GB units");
+}
+
+#[test]
+fn test_render_unified_view_local_green() {
+    // Process on CPU node 0, memory on node 0 → green
+    use ratatui::style::Color;
+
+    let mut terminal = make_test_terminal();
+    let theme = Theme::from(ThemeType::Dracula);
+
+    let numa_nodes = vec![
+        NumaNode { id: 0, memory_total_kb: 16_000_000, memory_free_kb: 8_000_000, cpus: vec![0, 1], node_type: NumaNodeType::Cpu },
+        NumaNode { id: 1, memory_total_kb: 16_000_000, memory_free_kb: 10_000_000, cpus: vec![2, 3], node_type: NumaNodeType::Cpu },
+    ];
+
+    let procs = vec![UnifiedProcessInfo {
+        pid: 100,
+        name: "local_app".into(),
+        swap_kb: 512,
+        cpu_nodes: vec![0],
+        gpu_nodes: vec![],
+        kb_per_node: HashMap::from([(0, 5000)]),
+        gpu_memory_kb: None,
+        gpu_indices: vec![],
+        location: ProcessLocation::CpuOnly,
+    }];
+
+    terminal
+        .draw(|frame| {
+            ui::unified_view::render_unified_view(
+                frame, frame.area(), &theme, &procs, &SizeUnits::KB, &numa_nodes,
+            );
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer().clone();
+    let green = Color::Rgb(80, 200, 120);
+    let has_green = buf.content().iter().any(|cell| cell.fg == green);
+    assert!(has_green, "Local CPU node memory should be green (80,200,120)");
+}
+
+#[test]
+fn test_render_unified_view_remote_orange() {
+    // Process on CPU node 0, memory on node 1 (remote) → orange
+    use ratatui::style::Color;
+
+    let mut terminal = make_test_terminal();
+    let theme = Theme::from(ThemeType::Dracula);
+
+    let numa_nodes = vec![
+        NumaNode { id: 0, memory_total_kb: 16_000_000, memory_free_kb: 8_000_000, cpus: vec![0, 1], node_type: NumaNodeType::Cpu },
+        NumaNode { id: 1, memory_total_kb: 16_000_000, memory_free_kb: 10_000_000, cpus: vec![2, 3], node_type: NumaNodeType::Cpu },
+    ];
+
+    let procs = vec![UnifiedProcessInfo {
+        pid: 100,
+        name: "remote_app".into(),
+        swap_kb: 512,
+        cpu_nodes: vec![0],
+        gpu_nodes: vec![],
+        kb_per_node: HashMap::from([(1, 3000)]),
+        gpu_memory_kb: None,
+        gpu_indices: vec![],
+        location: ProcessLocation::CpuOnly,
+    }];
+
+    terminal
+        .draw(|frame| {
+            ui::unified_view::render_unified_view(
+                frame, frame.area(), &theme, &procs, &SizeUnits::KB, &numa_nodes,
+            );
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer().clone();
+    let orange = Color::Rgb(255, 183, 77);
+    let has_orange = buf.content().iter().any(|cell| cell.fg == orange);
+    assert!(has_orange, "Remote CPU node memory should be orange (255,183,77)");
+}
+
+#[test]
+fn test_render_unified_view_hbm_red() {
+    // Process with memory on HBM node → red
+    use ratatui::style::Color;
+
+    let mut terminal = make_test_terminal();
+    let theme = Theme::from(ThemeType::Dracula);
+
+    let numa_nodes = vec![
+        NumaNode { id: 0, memory_total_kb: 16_000_000, memory_free_kb: 8_000_000, cpus: vec![0, 1], node_type: NumaNodeType::Cpu },
+        NumaNode { id: 2, memory_total_kb: 81_920_000, memory_free_kb: 40_960_000, cpus: vec![], node_type: NumaNodeType::GpuHbm { gpu_index: 0 } },
+    ];
+
+    let procs = vec![UnifiedProcessInfo {
+        pid: 100,
+        name: "gpu_app".into(),
+        swap_kb: 256,
+        cpu_nodes: vec![0],
+        gpu_nodes: vec![2],
+        kb_per_node: HashMap::from([(2, 10_000)]),
+        gpu_memory_kb: Some(10_000),
+        gpu_indices: vec![0],
+        location: ProcessLocation::CpuAndGpu,
+    }];
+
+    terminal
+        .draw(|frame| {
+            ui::unified_view::render_unified_view(
+                frame, frame.area(), &theme, &procs, &SizeUnits::KB, &numa_nodes,
+            );
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer().clone();
+    let red = Color::Rgb(255, 85, 85);
+    let has_red = buf.content().iter().any(|cell| cell.fg == red);
+    assert!(has_red, "GPU HBM node memory should be red (255,85,85)");
+}
+
+#[test]
+fn test_render_numa_view_local_green() {
+    // NUMA view: process on cpu_node=0, memory on node 0 → green
+    use ratatui::style::Color;
+
+    let mut terminal = make_test_terminal();
+    let theme = Theme::from(ThemeType::Dracula);
+
+    let numa_nodes = vec![
+        NumaNode { id: 0, memory_total_kb: 16_000_000, memory_free_kb: 8_000_000, cpus: vec![0, 1], node_type: NumaNodeType::Cpu },
+        NumaNode { id: 1, memory_total_kb: 16_000_000, memory_free_kb: 10_000_000, cpus: vec![2, 3], node_type: NumaNodeType::Cpu },
+    ];
+
+    let infos = vec![ProcessNumaInfo {
+        pid: 42,
+        name: "local_proc".into(),
+        kb_per_node: HashMap::from([(0, 5000)]),
+        total_kb: 5000,
+        cpu_node: Some(0),
+    }];
+
+    terminal
+        .draw(|frame| {
+            ui::numa_view::render_numa_view(
+                frame, frame.area(), &theme, &numa_nodes, &infos, true, &SizeUnits::KB,
+            );
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer().clone();
+    let green = Color::Rgb(80, 200, 120);
+    let has_green = buf.content().iter().any(|cell| cell.fg == green);
+    assert!(has_green, "NUMA view local node memory should be green (80,200,120)");
+}
+
+#[test]
+fn test_render_numa_view_remote_orange() {
+    // NUMA view: process on cpu_node=0, memory on node 1 (remote CPU) → orange
+    // Carefully designed: cpu_node=0 but dominant memory on node 1,
+    // so the CPU column will be orange (misaligned), AND node 1 cell should be orange (remote)
+    use ratatui::style::Color;
+
+    let mut terminal = make_test_terminal();
+    let theme = Theme::from(ThemeType::Dracula);
+
+    let numa_nodes = vec![
+        NumaNode { id: 0, memory_total_kb: 16_000_000, memory_free_kb: 8_000_000, cpus: vec![0, 1], node_type: NumaNodeType::Cpu },
+        NumaNode { id: 1, memory_total_kb: 16_000_000, memory_free_kb: 10_000_000, cpus: vec![2, 3], node_type: NumaNodeType::Cpu },
+    ];
+
+    let infos = vec![ProcessNumaInfo {
+        pid: 42,
+        name: "remote_proc".into(),
+        kb_per_node: HashMap::from([(1, 8000)]),
+        total_kb: 8000,
+        cpu_node: Some(0),
+    }];
+
+    terminal
+        .draw(|frame| {
+            ui::numa_view::render_numa_view(
+                frame, frame.area(), &theme, &numa_nodes, &infos, true, &SizeUnits::KB,
+            );
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer().clone();
+    let orange = Color::Rgb(255, 183, 77);
+    let has_orange = buf.content().iter().any(|cell| cell.fg == orange);
+    assert!(has_orange, "NUMA view remote node memory should be orange (255,183,77)");
+}
+
+#[test]
+fn test_render_numa_view_hbm_red() {
+    // NUMA view: process with memory on GPU HBM node → red
+    use ratatui::style::Color;
+
+    let mut terminal = make_test_terminal();
+    let theme = Theme::from(ThemeType::Dracula);
+
+    let numa_nodes = vec![
+        NumaNode { id: 0, memory_total_kb: 16_000_000, memory_free_kb: 8_000_000, cpus: vec![0, 1], node_type: NumaNodeType::Cpu },
+        NumaNode { id: 2, memory_total_kb: 81_920_000, memory_free_kb: 40_960_000, cpus: vec![], node_type: NumaNodeType::GpuHbm { gpu_index: 0 } },
+    ];
+
+    let infos = vec![ProcessNumaInfo {
+        pid: 42,
+        name: "hbm_proc".into(),
+        kb_per_node: HashMap::from([(0, 1000), (2, 30_000)]),
+        total_kb: 31_000,
+        cpu_node: Some(0),
+    }];
+
+    terminal
+        .draw(|frame| {
+            ui::numa_view::render_numa_view(
+                frame, frame.area(), &theme, &numa_nodes, &infos, true, &SizeUnits::KB,
+            );
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer().clone();
+    let red = Color::Rgb(255, 85, 85);
+    let has_red = buf.content().iter().any(|cell| cell.fg == red);
+    assert!(has_red, "NUMA view HBM node memory should be red (255,85,85)");
 }
 
 #[test]

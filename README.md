@@ -24,7 +24,8 @@ A real-time terminal monitor for **swap usage**, **NUMA topology**, and **GPU me
 - CPU list per node
 - Per-process NUMA memory distribution (top 20 swap consumers)
 - CPU NODE column shows which NUMA node each process is executing on
-- Amber highlighting when CPU node differs from dominant memory node (NUMA misalignment)
+- Colour-coded per-node memory: green = local, orange = remote CPU, red = GPU HBM
+- Amber highlighting on CPU column when CPU node differs from dominant memory node (NUMA misalignment)
 - Detects GPU HBM NUMA nodes on NVIDIA Grace Blackwell systems
 
 ### GPU View (Tab 3)
@@ -36,21 +37,33 @@ A real-time terminal monitor for **swap usage**, **NUMA topology**, and **GPU me
 ### Unified CPU+GPU+NUMA View (Tab 4)
 - Combined process table: PID | NAME | SWAP | GPU MEM | NUMA | LOCATION
 - Processes classified as CPU-only, GPU-only, or CPU+GPU
-- Color-coded location column (orange = HBM migration detected)
+- Colour-coded per-node memory: green = local, orange = remote CPU, red = GPU HBM
 - Sortable by swap, GPU memory, NUMA node, or name
 
 ### General
-- Multiple color themes (Default, Solarized, Monokai, Dracula, Nord)
+- Multiple colour themes (Default, Solarized, Monokai, Dracula, Nord)
 - Unit conversion (KB/MB/GB)
 - Configurable refresh interval (1ms–10s)
 - TTL-based caching for expensive data sources (NUMA topology, nvidia-smi)
 - Architectures: x86_64, ARM64, Power, RISC-V, s390x, LoongArch
 
+### NUMA Memory Colour Coding
+
+Per-node memory values in both the NUMA view and Unified view are colour-coded to show memory locality at a glance:
+
+| Colour | Meaning | When |
+|--------|---------|------|
+| **Green** | Local memory | Process runs on this CPU NUMA node |
+| **Orange** | Remote memory | Memory on a different CPU NUMA node |
+| **Red** | GPU HBM | Memory on a GPU High Bandwidth Memory node |
+
+Zero-KB cells show a plain `-` with no colour. The CPU column in the NUMA view uses amber when the process's CPU node differs from its dominant memory node (NUMA misalignment).
+
 ## Use Cases
 
 **Standard swap monitoring** — Track which processes consume the most swap, identify memory-hungry applications, monitor swap pressure over time with the live chart.
 
-**NVIDIA Grace Blackwell (GB200) / Grace Hopper** — On these systems, GPU HBM is exposed as a NUMA node. nv-swaptop detects HBM NUMA nodes, shows which CPU processes have memory migrated to GPU RAM, and highlights HBM migration in the unified view.
+**NVIDIA Grace Blackwell (GB200) / Grace Hopper** — On these systems, GPU HBM is exposed as a NUMA node. nv-swaptop detects HBM NUMA nodes, shows which CPU processes have memory migrated to GPU RAM, and colour-codes memory locality (green = local, orange = remote, red = HBM).
 
 **GPU workstation monitoring** — See GPU VRAM usage alongside swap consumption. Identify processes that are both swapping and using GPU memory. Useful for ML training, rendering, and simulation workloads.
 
@@ -108,7 +121,7 @@ nv-swaptop --demo   # auto-cycle all views and quit (for recording)
 | `k` / `m` / `g` | Switch units (KB / MB / GB) |
 | `h` | Toggle swap device display (Swap view) |
 | `a` | Toggle aggregate mode (group by process name) |
-| `t` | Cycle color theme |
+| `t` | Cycle colour theme |
 | `↑` / `u` | Scroll up |
 | `↓` / `d` | Scroll down |
 | `Home` | Jump to top |
@@ -183,7 +196,7 @@ Two CPU NUMA nodes (128 GB each, 32 cores each), four discrete GPUs (VRAM is **n
 
 #### Unified CPU+GPU+NUMA View
 ```text
-╭ Unified CPU+GPU+NUMA View ──────────────────── (orange = HBM migration) ───────────╮
+╭ Unified CPU+GPU+NUMA View ──────────────────────── local  remote  GPU HBM ─────────╮
 │      PID  NAME             CPU→N GPU→N        N0        N1       SWAP   GPU MEM    │
 │    15678  python3          0     0        8.20 GB   4.10 GB    128 MB  38.20 GB    │
 │    12045  firefox          0*    -        6.70 GB   8.20 GB    524 MB     -        │
@@ -207,7 +220,7 @@ Each GB200 superchip pairs one Grace CPU with two B200 GPUs. Two superchips give
 │     4 │ GPU HBM 2  │  192.00 GB │ 180.50 GB │ -                                          │
 │     5 │ GPU HBM 3  │  192.00 GB │  12.00 GB │ -                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────╯
-╭ Per-Process NUMA Distribution (top 20 swap consumers) ───────────────────────────────────────────────────────╮
+╭ Per-Process NUMA Distribution (top 20 swap consumers) ──────────── local  remote  GPU HBM ────────────────────╮
 │      PID │ PROCESS              │ CPU │      TOTAL │     N0 │     N1 │ N2(HBM) │ N3(HBM) │ N4(HBM) │ N5(HBM) │
 │    20001 │ training_job         │  0* │  324.50 GB │ 4.5 GB │   -    │ 96.0 GB │ 48.0 GB │ 176.0 GB│    -    │
 │    20045 │ inference_srv        │  72 │   60.50 GB │   -    │ 0.5 GB │    -    │    -    │    -    │ 12.0 GB │
@@ -234,7 +247,7 @@ Each GB200 superchip pairs one Grace CPU with two B200 GPUs. Two superchips give
 
 #### Unified CPU+GPU+NUMA View
 ```text
-╭ Unified CPU+GPU+NUMA View ───────────────────────────────────────────────────────────────────── (orange = HBM migration) ╮
+╭ Unified CPU+GPU+NUMA View ─────────────────────────────────────────────────────────────── local  remote  GPU HBM ╮
 │      PID  NAME             CPU→N GPU→N        N0        N1   N2(HBM)   N3(HBM)   N4(HBM)   N5(HBM)       SWAP   GPU MEM  │
 │    20001  training_job     0*    0,2      4.50 GB      -     96.00 GB  48.00 GB 176.00 GB      -       512 MB 272.00 GB  │
 │    20045  inference_srv    72    3           -      0.50 GB      -         -         -     12.00 GB      -     12.00 GB  │
