@@ -562,6 +562,62 @@ fn test_render_unified_view_gb200() {
 }
 
 #[test]
+fn test_render_unified_view_hbm_orange_style() {
+    // Verify that cells for HBM NUMA nodes with kb > 0 get the orange color (255, 183, 77)
+    use ratatui::style::Color;
+
+    let mut terminal = make_test_terminal();
+    let theme = Theme::from(ThemeType::Dracula);
+
+    let numa_nodes = vec![
+        NumaNode { id: 0, memory_total_kb: 16_000_000, memory_free_kb: 8_000_000, cpus: vec![0, 1, 2, 3], node_type: NumaNodeType::Cpu },
+        NumaNode { id: 2, memory_total_kb: 81_920_000, memory_free_kb: 40_960_000, cpus: vec![], node_type: NumaNodeType::GpuHbm { gpu_index: 0 } },
+    ];
+
+    // CPU process with pages on the HBM node — should trigger orange styling
+    let procs = vec![UnifiedProcessInfo {
+        pid: 500,
+        name: "migrated_app".into(),
+        swap_kb: 1024,
+        cpu_nodes: vec![0],
+        gpu_nodes: vec![],
+        kb_per_node: HashMap::from([(0, 2000), (2, 50_000)]),
+        gpu_memory_kb: None,
+        gpu_indices: vec![],
+        location: ProcessLocation::CpuAndGpu,
+    }];
+
+    terminal
+        .draw(|frame| {
+            ui::unified_view::render_unified_view(
+                frame,
+                frame.area(),
+                &theme,
+                &procs,
+                &SizeUnits::KB,
+                &numa_nodes,
+            );
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer().clone();
+    let orange = Color::Rgb(255, 183, 77);
+
+    // Find any cell with the orange foreground color — the HBM column value (50000 KB)
+    let has_orange_cell = buf.content().iter().any(|cell| cell.fg == orange);
+    assert!(
+        has_orange_cell,
+        "Expected orange (255,183,77) foreground on HBM node cell with kb > 0"
+    );
+
+    // Also verify that the CPU node column (N0) does NOT have orange
+    // The "50000 KB" value should be orange, but "2000 KB" should not
+    let content: String = buf.content().iter().map(|c| c.symbol().to_string()).collect();
+    assert!(content.contains("50000"));
+    assert!(content.contains("2000"));
+}
+
+#[test]
 fn test_app_view_cycling() {
     let mock = MockDataProvider::new();
     let mut app = App::new(Box::new(mock), false);
