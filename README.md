@@ -160,7 +160,7 @@ nv-swaptop --demo   # auto-cycle all views and quit (for recording)
 │                                                        │
 │  Per-Process NUMA Distribution (top 20):               │
 │     PID  NAME               CPU  TOTAL PG  N0    N1    │
-│   12045  firefox              1*    15230  6870  8360  │
+│   12045  firefox              0*    15230  6870  8360  │
 │    8923  training_job         0      9840  9200   640  │
 │  * = amber: CPU node ≠ dominant memory node            │
 ╰────────────────────────────────────────────────────────╯
@@ -182,13 +182,12 @@ nv-swaptop --demo   # auto-cycle all views and quit (for recording)
 
 ### Unified CPU+GPU+NUMA View
 ```text
-╭ Unified CPU+GPU+NUMA View ──────── (orange = HBM migration detected) ───╮
-│      PID  NAME                      SWAP      GPU MEM    NUMA  LOCATION │
-│    15678  python3                512.00 MB    38.20 GB      0   CPU+GPU │
-│    12045  firefox                524288 KB           -      0   CPU     │
-│    15690  python3                  0.00 MB    12.80 GB      1   GPU     │
-│     8923  training_job           128.00 MB     4.00 GB      2   CPU+GPU │
-╰─────────────────────────────────────────────────────────────────────────╯
+╭ Unified CPU+GPU+NUMA View ──────────────────── (orange = HBM migration detected) ────────────────╮
+│      PID  NAME               CPU→N  GPU→N     N0       N1       N2(HBM)  N3(HBM)   SWAP  GPU MEM │
+│    15678  training_job       0,1    2,3     8.2 GB   4.1 GB   2.0 GB      -       128M   38.2 GB │
+│    12045  firefox            0      -       6.7 GB   8.2 GB     -         -       524M     -     │
+│     9012  Xorg               0      2         -        -        -         -         -     4.1 GB │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
 ## Themes

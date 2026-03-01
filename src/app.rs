@@ -162,7 +162,7 @@ impl App {
                     &self.swap_size_unit,
                     self.aggregated,
                 );
-                if self.active_view == ActiveView::Numa {
+                if self.active_view == ActiveView::Numa || self.active_view == ActiveView::Unified {
                     self.refresh_numa_data();
                 }
                 if self.active_view == ActiveView::Gpu || self.active_view == ActiveView::Unified {
@@ -236,8 +236,8 @@ impl App {
             self.numa_topology_last = Some(Instant::now());
         }
 
-        // NUMA maps: 5s TTL, only when NUMA view active
-        if self.active_view != ActiveView::Numa {
+        // NUMA maps: 5s TTL, only when NUMA or Unified view active
+        if self.active_view != ActiveView::Numa && self.active_view != ActiveView::Unified {
             return;
         }
 
@@ -310,6 +310,7 @@ impl App {
             &self.gpu_processes,
             &self.process_numa_infos,
             &self.numa_nodes,
+            &self.gpu_devices,
         );
         self.sort_unified_procs();
     }
@@ -342,7 +343,7 @@ impl App {
             }
             #[cfg(target_os = "linux")]
             SortColumn::NumaNode => {
-                self.unified_procs.sort_by(|a, b| a.numa_node.cmp(&b.numa_node));
+                self.unified_procs.sort_by(|a, b| a.cpu_nodes.first().cmp(&b.cpu_nodes.first()));
             }
         }
     }
@@ -384,6 +385,7 @@ impl App {
                     &theme,
                     &self.unified_procs,
                     &self.swap_size_unit,
+                    &self.numa_nodes,
                 );
             }
         }
@@ -985,5 +987,46 @@ mod tests {
         assert_eq!(views[2], ActiveView::Gpu);
         assert_eq!(views[3], ActiveView::Unified);
         assert!(demo_view_for_elapsed(16).is_none());
+    }
+
+    // --- Unified view data tests ---
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_refresh_unified_data_populates_new_fields() {
+        use crate::data::{GpuDevice, GpuProcessInfo, ProcessLocation};
+
+        let mut mock = MockDataProvider::new();
+        mock.gpu_available = true;
+        mock.gpu_devices = vec![GpuDevice {
+            index: 0, name: "GPU 0".into(), memory_total_kb: 81_920_000,
+            memory_used_kb: 40_000_000, memory_free_kb: 41_920_000,
+            numa_node_id: Some(2), temperature: Some(45),
+            pci_bus_id: "00:01.0".into(),
+        }];
+        mock.gpu_processes = vec![GpuProcessInfo {
+            pid: 1, name: "test_proc".into(), gpu_index: 0, gpu_memory_used_kb: 4096,
+        }];
+
+        let mut app = App::new(Box::new(mock), false);
+        app.active_view = ActiveView::Unified;
+        app.gpu_devices = vec![GpuDevice {
+            index: 0, name: "GPU 0".into(), memory_total_kb: 81_920_000,
+            memory_used_kb: 40_000_000, memory_free_kb: 41_920_000,
+            numa_node_id: Some(2), temperature: Some(45),
+            pci_bus_id: "00:01.0".into(),
+        }];
+        app.gpu_processes = vec![GpuProcessInfo {
+            pid: 1, name: "test_proc".into(), gpu_index: 0, gpu_memory_used_kb: 4096,
+        }];
+
+        app.refresh_unified_data();
+
+        // test_proc (pid=1) should have gpu_indices=[0] and gpu_nodes=[2]
+        let proc = app.unified_procs.iter().find(|p| p.pid == 1).unwrap();
+        assert_eq!(proc.gpu_indices, vec![0]);
+        assert_eq!(proc.gpu_nodes, vec![2]);
+        assert_eq!(proc.gpu_memory_kb, Some(4096));
+        assert_eq!(proc.location, ProcessLocation::CpuAndGpu);
     }
 }

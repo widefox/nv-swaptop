@@ -217,21 +217,35 @@ use std::collections::HashMap as StdHashMap;
 
 /// Merge swap, GPU, and (optionally) NUMA data into unified process info.
 /// Joins by PID. Processes appearing in both swap and GPU get `CpuAndGpu`.
+/// Multi-GPU: accumulates gpu_memory_kb (sum) and collects gpu_indices.
 #[cfg(target_os = "linux")]
 pub fn merge_process_data(
     swap_procs: &[ProcessSwapInfo],
     gpu_procs: &[GpuProcessInfo],
     numa_infos: &[ProcessNumaInfo],
     numa_nodes: &[NumaNode],
+    gpu_devices: &[GpuDevice],
 ) -> Vec<UnifiedProcessInfo> {
     let mut by_pid: StdHashMap<u32, UnifiedProcessInfo> = StdHashMap::new();
 
+    // Build gpu_index → numa_node_id mapping from devices
+    let gpu_numa_map: StdHashMap<u32, u32> = gpu_devices
+        .iter()
+        .filter_map(|d| d.numa_node_id.map(|n| (d.index, n)))
+        .collect();
+
     // Insert swap processes
     for p in swap_procs {
-        let numa_node = numa_infos
-            .iter()
-            .find(|n| n.pid == p.pid)
-            .and_then(|n| n.pages_per_node.iter().max_by_key(|(_, v)| **v).map(|(k, _)| *k));
+        let numa_info = numa_infos.iter().find(|n| n.pid == p.pid);
+
+        let cpu_nodes = numa_info
+            .and_then(|n| n.cpu_node)
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        let pages_per_node = numa_info
+            .map(|n| n.pages_per_node.clone())
+            .unwrap_or_default();
 
         by_pid.insert(
             p.pid,
@@ -239,19 +253,30 @@ pub fn merge_process_data(
                 pid: p.pid,
                 name: p.name.clone(),
                 swap_kb: p.swap_size as u64,
-                numa_node,
+                cpu_nodes,
+                gpu_nodes: Vec::new(),
+                pages_per_node,
                 gpu_memory_kb: None,
-                gpu_index: None,
+                gpu_indices: Vec::new(),
                 location: ProcessLocation::CpuOnly,
             },
         );
     }
 
-    // Merge GPU processes
+    // Merge GPU processes — accumulate for multi-GPU
     for gp in gpu_procs {
+        let gpu_node = gpu_numa_map.get(&gp.gpu_index).copied();
         if let Some(existing) = by_pid.get_mut(&gp.pid) {
-            existing.gpu_memory_kb = Some(gp.gpu_memory_used_kb);
-            existing.gpu_index = Some(gp.gpu_index);
+            let prev = existing.gpu_memory_kb.unwrap_or(0);
+            existing.gpu_memory_kb = Some(prev + gp.gpu_memory_used_kb);
+            if !existing.gpu_indices.contains(&gp.gpu_index) {
+                existing.gpu_indices.push(gp.gpu_index);
+            }
+            if let Some(node) = gpu_node
+                && !existing.gpu_nodes.contains(&node)
+            {
+                existing.gpu_nodes.push(node);
+            }
             existing.location = ProcessLocation::CpuAndGpu;
         } else {
             by_pid.insert(
@@ -260,9 +285,11 @@ pub fn merge_process_data(
                     pid: gp.pid,
                     name: gp.name.clone(),
                     swap_kb: 0,
-                    numa_node: None,
+                    cpu_nodes: Vec::new(),
+                    gpu_nodes: gpu_node.into_iter().collect(),
+                    pages_per_node: StdHashMap::new(),
                     gpu_memory_kb: Some(gp.gpu_memory_used_kb),
-                    gpu_index: Some(gp.gpu_index),
+                    gpu_indices: vec![gp.gpu_index],
                     location: ProcessLocation::GpuOnly,
                 },
             );
@@ -280,7 +307,6 @@ pub fn merge_process_data(
         if let Some(proc) = by_pid.get_mut(&info.pid) {
             for &node_id in &gpu_hbm_nodes {
                 if info.pages_per_node.get(&node_id).copied().unwrap_or(0) > 0 {
-                    // Process has pages on GPU HBM — mark as CpuAndGpu if not already
                     if proc.location == ProcessLocation::CpuOnly {
                         proc.location = ProcessLocation::CpuAndGpu;
                     }
@@ -291,7 +317,6 @@ pub fn merge_process_data(
     }
 
     let mut result: Vec<UnifiedProcessInfo> = by_pid.into_values().collect();
-    // Sort by total memory (swap + gpu) descending
     result.sort_by(|a, b| {
         let total_a = a.swap_kb + a.gpu_memory_kb.unwrap_or(0);
         let total_b = b.swap_kb + b.gpu_memory_kb.unwrap_or(0);
@@ -301,6 +326,7 @@ pub fn merge_process_data(
 }
 
 /// Simplified merge for non-Linux platforms (no NUMA data).
+/// Multi-GPU: accumulates gpu_memory_kb (sum) and collects gpu_indices.
 #[cfg(not(target_os = "linux"))]
 pub fn merge_process_data(
     swap_procs: &[ProcessSwapInfo],
@@ -316,7 +342,7 @@ pub fn merge_process_data(
                 name: p.name.clone(),
                 swap_kb: p.swap_size as u64,
                 gpu_memory_kb: None,
-                gpu_index: None,
+                gpu_indices: Vec::new(),
                 location: ProcessLocation::CpuOnly,
             },
         );
@@ -324,8 +350,11 @@ pub fn merge_process_data(
 
     for gp in gpu_procs {
         if let Some(existing) = by_pid.get_mut(&gp.pid) {
-            existing.gpu_memory_kb = Some(gp.gpu_memory_used_kb);
-            existing.gpu_index = Some(gp.gpu_index);
+            let prev = existing.gpu_memory_kb.unwrap_or(0);
+            existing.gpu_memory_kb = Some(prev + gp.gpu_memory_used_kb);
+            if !existing.gpu_indices.contains(&gp.gpu_index) {
+                existing.gpu_indices.push(gp.gpu_index);
+            }
             existing.location = ProcessLocation::CpuAndGpu;
         } else {
             by_pid.insert(
@@ -335,7 +364,7 @@ pub fn merge_process_data(
                     name: gp.name.clone(),
                     swap_kb: 0,
                     gpu_memory_kb: Some(gp.gpu_memory_used_kb),
-                    gpu_index: Some(gp.gpu_index),
+                    gpu_indices: vec![gp.gpu_index],
                     location: ProcessLocation::GpuOnly,
                 },
             );
@@ -371,7 +400,7 @@ mod tests {
     fn test_merge_same_pid() {
         let swap = vec![ProcessSwapInfo { pid: 100, name: "train".into(), swap_size: 1024.0, #[cfg(target_os = "linux")] last_cpu: None }];
         let gpu = vec![GpuProcessInfo { pid: 100, name: "train".into(), gpu_index: 0, gpu_memory_used_kb: 4096 }];
-        let result = merge_process_data(&swap, &gpu, &[], &[]);
+        let result = merge_process_data(&swap, &gpu, &[], &[], &[]);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].location, ProcessLocation::CpuAndGpu);
         assert_eq!(result[0].swap_kb, 1024);
@@ -382,7 +411,7 @@ mod tests {
     fn test_cpu_only_process() {
         let swap = vec![ProcessSwapInfo { pid: 100, name: "bash".into(), swap_size: 512.0, #[cfg(target_os = "linux")] last_cpu: None }];
         let gpu: Vec<GpuProcessInfo> = vec![];
-        let result = merge_process_data(&swap, &gpu, &[], &[]);
+        let result = merge_process_data(&swap, &gpu, &[], &[], &[]);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].location, ProcessLocation::CpuOnly);
     }
@@ -391,7 +420,7 @@ mod tests {
     fn test_gpu_only_process() {
         let swap: Vec<ProcessSwapInfo> = vec![];
         let gpu = vec![GpuProcessInfo { pid: 200, name: "cuda_app".into(), gpu_index: 0, gpu_memory_used_kb: 8192 }];
-        let result = merge_process_data(&swap, &gpu, &[], &[]);
+        let result = merge_process_data(&swap, &gpu, &[], &[], &[]);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].location, ProcessLocation::GpuOnly);
         assert_eq!(result[0].swap_kb, 0);
@@ -406,7 +435,7 @@ mod tests {
         let gpu = vec![
             GpuProcessInfo { pid: 3, name: "gpu_big".into(), gpu_index: 0, gpu_memory_used_kb: 10000 },
         ];
-        let result = merge_process_data(&swap, &gpu, &[], &[]);
+        let result = merge_process_data(&swap, &gpu, &[], &[], &[]);
         assert_eq!(result.len(), 3);
         // gpu_big (10000) > big (5000) > small (100)
         assert_eq!(result[0].name, "gpu_big");
@@ -422,7 +451,7 @@ mod tests {
             ProcessSwapInfo { pid: 2, name: "proc".into(), swap_size: 200.0, #[cfg(target_os = "linux")] last_cpu: None },
         ];
         let gpu: Vec<GpuProcessInfo> = vec![];
-        let result = merge_process_data(&swap, &gpu, &[], &[]);
+        let result = merge_process_data(&swap, &gpu, &[], &[], &[]);
         // Different PIDs → separate entries (no name-based aggregation in merge)
         assert_eq!(result.len(), 2);
     }
@@ -442,7 +471,7 @@ mod tests {
             NumaNode { id: 0, memory_total_kb: 16_000_000, memory_free_kb: 8_000_000, cpus: vec![0, 1], node_type: NumaNodeType::Cpu },
             NumaNode { id: 2, memory_total_kb: 81_920_000, memory_free_kb: 40_960_000, cpus: vec![], node_type: NumaNodeType::GpuHbm { gpu_index: 0 } },
         ];
-        let result = merge_process_data(&swap, &gpu, &numa_infos, &numa_nodes);
+        let result = merge_process_data(&swap, &gpu, &numa_infos, &numa_nodes, &[]);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].location, ProcessLocation::CpuAndGpu); // migrated!
     }
@@ -454,7 +483,7 @@ mod tests {
             ProcessSwapInfo { pid: 2, name: "proc2".into(), swap_size: 200.0, #[cfg(target_os = "linux")] last_cpu: None },
         ];
         let gpu: Vec<GpuProcessInfo> = vec![];
-        let result = merge_process_data(&swap, &gpu, &[], &[]);
+        let result = merge_process_data(&swap, &gpu, &[], &[], &[]);
         assert_eq!(result.len(), 2);
         assert!(result.iter().all(|p| p.location == ProcessLocation::CpuOnly));
     }
@@ -495,9 +524,128 @@ mod tests {
         let swap = vec![ProcessSwapInfo { pid: 1, name: "proc".into(), swap_size: 100.0, #[cfg(target_os = "linux")] last_cpu: None }];
         let gpu = vec![GpuProcessInfo { pid: 1, name: "proc".into(), gpu_index: 0, gpu_memory_used_kb: 500 }];
         // No NUMA data at all
-        let result = merge_process_data(&swap, &gpu, &[], &[]);
+        let result = merge_process_data(&swap, &gpu, &[], &[], &[]);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].location, ProcessLocation::CpuAndGpu);
-        assert_eq!(result[0].numa_node, None);
+        assert!(result[0].cpu_nodes.is_empty());
+    }
+
+    // --- Phase 2: Enhanced merge tests ---
+
+    #[test]
+    fn test_merge_multi_gpu_same_pid() {
+        let swap = vec![ProcessSwapInfo {
+            pid: 100, name: "train".into(), swap_size: 1024.0,
+            #[cfg(target_os = "linux")] last_cpu: None,
+        }];
+        let gpu = vec![
+            GpuProcessInfo { pid: 100, name: "train".into(), gpu_index: 0, gpu_memory_used_kb: 4096 },
+            GpuProcessInfo { pid: 100, name: "train".into(), gpu_index: 1, gpu_memory_used_kb: 2048 },
+        ];
+        let devices = vec![
+            GpuDevice { index: 0, name: "GPU 0".into(), memory_total_kb: 81920000, memory_used_kb: 0, memory_free_kb: 0, numa_node_id: Some(2), temperature: None, pci_bus_id: "00:01.0".into() },
+            GpuDevice { index: 1, name: "GPU 1".into(), memory_total_kb: 81920000, memory_used_kb: 0, memory_free_kb: 0, numa_node_id: Some(3), temperature: None, pci_bus_id: "00:02.0".into() },
+        ];
+        let result = merge_process_data(&swap, &gpu, &[], &[], &devices);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].gpu_memory_kb, Some(4096 + 2048));
+        assert_eq!(result[0].gpu_indices, vec![0, 1]);
+        assert_eq!(result[0].gpu_nodes, vec![2, 3]);
+    }
+
+    #[test]
+    fn test_merge_carries_pages_per_node() {
+        let swap = vec![ProcessSwapInfo {
+            pid: 42, name: "app".into(), swap_size: 512.0,
+            #[cfg(target_os = "linux")] last_cpu: None,
+        }];
+        let numa_infos = vec![ProcessNumaInfo {
+            pid: 42, name: "app".into(),
+            pages_per_node: HashMap::from([(0, 500), (1, 200)]),
+            total_pages: 700, cpu_node: Some(0),
+        }];
+        let result = merge_process_data(&swap, &[], &numa_infos, &[], &[]);
+        assert_eq!(result[0].pages_per_node.get(&0), Some(&500));
+        assert_eq!(result[0].pages_per_node.get(&1), Some(&200));
+    }
+
+    #[test]
+    fn test_merge_carries_cpu_node() {
+        let swap = vec![ProcessSwapInfo {
+            pid: 42, name: "app".into(), swap_size: 512.0,
+            #[cfg(target_os = "linux")] last_cpu: None,
+        }];
+        let numa_infos = vec![ProcessNumaInfo {
+            pid: 42, name: "app".into(),
+            pages_per_node: HashMap::new(),
+            total_pages: 0, cpu_node: Some(1),
+        }];
+        let result = merge_process_data(&swap, &[], &numa_infos, &[], &[]);
+        assert_eq!(result[0].cpu_nodes, vec![1]);
+    }
+
+    #[test]
+    fn test_merge_gpu_nodes_from_device_mapping() {
+        let gpu = vec![GpuProcessInfo { pid: 200, name: "cuda".into(), gpu_index: 0, gpu_memory_used_kb: 8192 }];
+        let devices = vec![GpuDevice {
+            index: 0, name: "GPU 0".into(), memory_total_kb: 81920000,
+            memory_used_kb: 0, memory_free_kb: 0, numa_node_id: Some(2),
+            temperature: None, pci_bus_id: "00:01.0".into(),
+        }];
+        let result = merge_process_data(&[], &gpu, &[], &[], &devices);
+        assert_eq!(result[0].gpu_nodes, vec![2]);
+        assert_eq!(result[0].gpu_indices, vec![0]);
+    }
+
+    #[test]
+    fn test_merge_gpu_only_has_gpu_nodes() {
+        let gpu = vec![
+            GpuProcessInfo { pid: 300, name: "infer".into(), gpu_index: 1, gpu_memory_used_kb: 4096 },
+        ];
+        let devices = vec![
+            GpuDevice { index: 0, name: "GPU 0".into(), memory_total_kb: 0, memory_used_kb: 0, memory_free_kb: 0, numa_node_id: Some(2), temperature: None, pci_bus_id: "00:01.0".into() },
+            GpuDevice { index: 1, name: "GPU 1".into(), memory_total_kb: 0, memory_used_kb: 0, memory_free_kb: 0, numa_node_id: Some(3), temperature: None, pci_bus_id: "00:02.0".into() },
+        ];
+        let result = merge_process_data(&[], &gpu, &[], &[], &devices);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].location, ProcessLocation::GpuOnly);
+        assert_eq!(result[0].gpu_nodes, vec![3]);
+        assert!(result[0].cpu_nodes.is_empty());
+    }
+
+    #[test]
+    fn test_merge_no_numa_info_empty_pages() {
+        let swap = vec![ProcessSwapInfo {
+            pid: 1, name: "proc".into(), swap_size: 100.0,
+            #[cfg(target_os = "linux")] last_cpu: None,
+        }];
+        let result = merge_process_data(&swap, &[], &[], &[], &[]);
+        assert!(result[0].pages_per_node.is_empty());
+        assert!(result[0].cpu_nodes.is_empty());
+        assert!(result[0].gpu_nodes.is_empty());
+        assert!(result[0].gpu_indices.is_empty());
+    }
+
+    #[test]
+    fn test_merge_hbm_migration_with_new_fields() {
+        let swap = vec![ProcessSwapInfo {
+            pid: 100, name: "migrated".into(), swap_size: 1024.0,
+            #[cfg(target_os = "linux")] last_cpu: None,
+        }];
+        let numa_infos = vec![ProcessNumaInfo {
+            pid: 100, name: "migrated".into(),
+            pages_per_node: HashMap::from([(0, 500), (2, 100)]),
+            total_pages: 600, cpu_node: Some(0),
+        }];
+        let numa_nodes = vec![
+            NumaNode { id: 0, memory_total_kb: 16_000_000, memory_free_kb: 8_000_000, cpus: vec![0, 1], node_type: NumaNodeType::Cpu },
+            NumaNode { id: 2, memory_total_kb: 81_920_000, memory_free_kb: 40_960_000, cpus: vec![], node_type: NumaNodeType::GpuHbm { gpu_index: 0 } },
+        ];
+        let result = merge_process_data(&swap, &[], &numa_infos, &numa_nodes, &[]);
+        assert_eq!(result[0].location, ProcessLocation::CpuAndGpu);
+        assert_eq!(result[0].cpu_nodes, vec![0]);
+        assert_eq!(result[0].pages_per_node.get(&0), Some(&500));
+        assert_eq!(result[0].pages_per_node.get(&2), Some(&100));
+        assert!(result[0].gpu_indices.is_empty()); // no GPU process, just HBM migration
     }
 }

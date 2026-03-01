@@ -123,15 +123,22 @@ pub enum ProcessLocation {
     CpuAndGpu,
 }
 
+/// Page size in KB for converting numa_maps page counts to memory sizes.
+pub const PAGE_SIZE_KB: u64 = 4;
+
 #[derive(Debug, Clone)]
 pub struct UnifiedProcessInfo {
     pub pid: u32,
     pub name: String,
     pub swap_kb: u64,
     #[cfg(target_os = "linux")]
-    pub numa_node: Option<u32>,
+    pub cpu_nodes: Vec<u32>,
+    #[cfg(target_os = "linux")]
+    pub gpu_nodes: Vec<u32>,
+    #[cfg(target_os = "linux")]
+    pub pages_per_node: HashMap<u32, u64>,
     pub gpu_memory_kb: Option<u64>,
-    pub gpu_index: Option<u32>,
+    pub gpu_indices: Vec<u32>,
     pub location: ProcessLocation,
 }
 
