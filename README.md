@@ -194,7 +194,7 @@ Two CPU NUMA nodes (128 GB each, 32 cores each), four discrete GPUs (VRAM is **n
 
 ### aarch64 — 2× NVIDIA Grace Blackwell (GB200)
 
-Two Grace CPUs (480 GB LPDDR5X each, 72 cores each) + two B200 GPUs (192 GB HBM3e each). GPU HBM is exposed as NUMA nodes N2 and N3.
+Each GB200 superchip pairs one Grace CPU with two B200 GPUs. Two superchips give 2 Grace CPUs (480 GB LPDDR5X each, 72 cores each) + 4 B200 GPUs (192 GB HBM3e each). GPU HBM is exposed as NUMA nodes N2–N5.
 
 #### NUMA Topology View
 ```text
@@ -204,14 +204,16 @@ Two Grace CPUs (480 GB LPDDR5X each, 72 cores each) + two B200 GPUs (192 GB HBM3
 │     1 │ CPU        │  480.00 GB │ 185.30 GB │ 72-143                                     │
 │     2 │ GPU HBM 0  │  192.00 GB │  96.00 GB │ -                                          │
 │     3 │ GPU HBM 1  │  192.00 GB │  48.00 GB │ -                                          │
+│     4 │ GPU HBM 2  │  192.00 GB │ 180.50 GB │ -                                          │
+│     5 │ GPU HBM 3  │  192.00 GB │  12.00 GB │ -                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────╯
-╭ Per-Process NUMA Distribution (top 20 swap consumers) ───────────────────────────────────╮
-│      PID │ PROCESS              │ CPU │      TOTAL │     N0 │     N1 │ N2(HBM) │ N3(HBM) │
-│    20001 │ training_job         │  0* │  212.48 GB │ 4.5 GB │   -    │ 96.0 GB │ 48.0 GB │
-│    20045 │ inference_srv        │  72 │   64.00 GB │   -    │ 0.5 GB │    -    │ 48.0 GB │
-│    18200 │ data_loader          │   0 │    8.20 GB │ 6.2 GB │ 2.0 GB │    -    │    -    │
-│  * = amber: CPU node ≠ dominant memory node                                              │
-╰──────────────────────────────────────────────────────────────────────────────────────────╯
+╭ Per-Process NUMA Distribution (top 20 swap consumers) ───────────────────────────────────────────────────────╮
+│      PID │ PROCESS              │ CPU │      TOTAL │     N0 │     N1 │ N2(HBM) │ N3(HBM) │ N4(HBM) │ N5(HBM) │
+│    20001 │ training_job         │  0* │  324.50 GB │ 4.5 GB │   -    │ 96.0 GB │ 48.0 GB │ 176.0 GB│    -    │
+│    20045 │ inference_srv        │  72 │   60.50 GB │   -    │ 0.5 GB │    -    │    -    │    -    │ 12.0 GB │
+│    18200 │ data_loader          │   0 │    8.20 GB │ 6.2 GB │ 2.0 GB │    -    │    -    │    -    │    -    │
+│  * = amber: CPU node ≠ dominant memory node                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
 #### GPU View
@@ -219,22 +221,25 @@ Two Grace CPUs (480 GB LPDDR5X each, 72 cores each) + two B200 GPUs (192 GB HBM3
 ╭ GPU Devices ───────────────────────────────────────────────────────────╮
 │  #0  NVIDIA B200            192.00 GB total  96.00 GB used  62°C       │
 │  #1  NVIDIA B200            192.00 GB total  48.00 GB used  55°C       │
+│  #2  NVIDIA B200            192.00 GB total 180.50 GB used  73°C       │
+│  #3  NVIDIA B200            192.00 GB total  12.00 GB used  44°C       │
 ╰────────────────────────────────────────────────────────────────────────╯
 ╭ GPU Processes ─────────────────────────────────────────────────────────╮
 │     PID  NAME                 GPU#     VRAM USED                       │
 │   20001  training_job            0     96.00 GB                        │
-│   20045  inference_srv           1     48.00 GB                        │
+│   20001  training_job            2    176.00 GB                        │
+│   20045  inference_srv           3     12.00 GB                        │
 ╰────────────────────────────────────────────────────────────────────────╯
 ```
 
 #### Unified CPU+GPU+NUMA View
 ```text
-╭ Unified CPU+GPU+NUMA View ────────────────────────────────────── (orange = HBM migration) ───────────────╮
-│      PID  NAME             CPU→N GPU→N        N0        N1   N2(HBM)   N3(HBM)       SWAP   GPU MEM      │
-│    20001  training_job     0*    0,1      4.50 GB      -     96.00 GB  48.00 GB    512 MB  96.00 GB      │
-│    20045  inference_srv    72    1           -      0.50 GB      -     48.00 GB      -     48.00 GB      │
-│    18200  data_loader      0     -        6.20 GB  2.00 GB      -         -       2.05 GB     -          │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭ Unified CPU+GPU+NUMA View ───────────────────────────────────────────────────────────────────── (orange = HBM migration) ╮
+│      PID  NAME             CPU→N GPU→N        N0        N1   N2(HBM)   N3(HBM)   N4(HBM)   N5(HBM)       SWAP   GPU MEM  │
+│    20001  training_job     0*    0,2      4.50 GB      -     96.00 GB  48.00 GB 176.00 GB      -       512 MB 272.00 GB  │
+│    20045  inference_srv    72    3           -      0.50 GB      -         -         -     12.00 GB      -     12.00 GB  │
+│    18200  data_loader      0     -        6.20 GB  2.00 GB      -         -         -         -       2.05 GB     -      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
 ## Themes
