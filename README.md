@@ -122,22 +122,32 @@ nv-swaptop --demo   # auto-cycle all views and quit (for recording)
 | `←` / `→` | Decrease / increase refresh interval |
 | `Ctrl+C` | Force quit |
 
+### View Cycle
+
+```workflow
+[Swap View (1)] → [NUMA View (2)*] → [GPU View (3)] → [Unified View (4)]
+                                                              ↓
+                                                         └──→ [Swap View (1)]
+
+* NUMA view is Linux only — skipped on other platforms
+```
+
 ## Example Output
 
 ### Swap View
 ```text
-╭─ nv-swaptop [Swap] sort:swap ── < 1000ms >  Tab/1-4:view  s:sort ── theme (t): Dracula ─╮
+╭─ nv-swaptop [Swap] sort:swap ── < 1000ms >  Tab/1-4:view  s:sort ── theme (t): Dracula ────╮
 │  ┌ Swap Usage ──────────────────────────┐                                                  │
 │  │ Total: 8388608 KB  Used: 1245184 KB  │                                                  │
 │  │ ██████████░░░░░░░░░░░░░ 14.8%        │                                                  │
-│  └──────────────────────────────────────-┘                                                  │
-│  ┌ Processes Using Swap ────────────────────────────────────────────┐                       │
+│  └──────────────────────────────────────┘                                                  │
+│  ┌ Processes Using Swap ───────────────────────────────────────────┐                       │
 │  │     PID  NAME                    SWAP                           │                       │
 │  │   12045  firefox              524288 KB                         │                       │
 │  │    8923  code                 312456 KB                         │                       │
 │  │    3456  chrome               204800 KB                         │                       │
 │  └─────────────────────────────────────────────────────────────────┘                       │
-╰───────────────────────────────────────────────────────────────────────────────────────────-─╯
+╰────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
 ### NUMA Topology View (Linux)
@@ -159,26 +169,26 @@ nv-swaptop --demo   # auto-cycle all views and quit (for recording)
 ### GPU View
 ```text
 ╭ GPU Devices ───────────────────────────────────────────────────────╮
-│  #0  NVIDIA B200             80.00 GB total  42.31 GB used  65°C  │
-│  #1  NVIDIA B200             80.00 GB total  12.80 GB used  58°C  │
+│  #0  NVIDIA B200             80.00 GB total  42.31 GB used  65°C   │
+│  #1  NVIDIA B200             80.00 GB total  12.80 GB used  58°C   │
 ╰────────────────────────────────────────────────────────────────────╯
 ╭ GPU Processes ─────────────────────────────────────────────────────╮
-│     PID  NAME                 GPU#     VRAM USED                  │
-│   15678  python3                 0     38.20 GB                   │
-│   15690  python3                 1     12.80 GB                   │
-│    9012  Xorg                    0      4.11 GB                   │
+│     PID  NAME                 GPU#     VRAM USED                   │
+│   15678  python3                 0     38.20 GB                    │
+│   15690  python3                 1     12.80 GB                    │
+│    9012  Xorg                    0      4.11 GB                    │
 ╰────────────────────────────────────────────────────────────────────╯
 ```
 
 ### Unified CPU+GPU+NUMA View
 ```text
-╭ Unified CPU+GPU+NUMA View ──────── (orange = HBM migration detected) ─╮
-│      PID  NAME                      SWAP      GPU MEM    NUMA  LOCATION│
-│    15678  python3                512.00 MB    38.20 GB      0   CPU+GPU│
-│    12045  firefox                524288 KB           -      0   CPU    │
-│    15690  python3                  0.00 MB    12.80 GB      1   GPU    │
-│     8923  training_job           128.00 MB     4.00 GB      2   CPU+GPU│
-╰────────────────────────────────────────────────────────────────────────╯
+╭ Unified CPU+GPU+NUMA View ──────── (orange = HBM migration detected) ───╮
+│      PID  NAME                      SWAP      GPU MEM    NUMA  LOCATION │
+│    15678  python3                512.00 MB    38.20 GB      0   CPU+GPU │
+│    12045  firefox                524288 KB           -      0   CPU     │
+│    15690  python3                  0.00 MB    12.80 GB      1   GPU     │
+│     8923  training_job           128.00 MB     4.00 GB      2   CPU+GPU │
+╰─────────────────────────────────────────────────────────────────────────╯
 ```
 
 ## Themes
