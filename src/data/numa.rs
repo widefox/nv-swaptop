@@ -12,10 +12,10 @@ pub fn parse_numa_meminfo(content: &str) -> (u64, u64) {
             if let Some(val) = extract_kb_value(line) {
                 total = val;
             }
-        } else if line.contains("MemFree:") {
-            if let Some(val) = extract_kb_value(line) {
-                free = val;
-            }
+        } else if line.contains("MemFree:")
+            && let Some(val) = extract_kb_value(line)
+        {
+            free = val;
         }
     }
     (total, free)
@@ -94,12 +94,11 @@ pub fn parse_numa_maps(content: &str, pid: u32, name: &str, default_page_size_kb
                     if let Ok(kps) = val.parse::<u64>() {
                         line_page_size_kb = kps;
                     }
-                } else if key.starts_with('N') {
-                    if let (Ok(node_id), Ok(pages)) =
-                        (key[1..].parse::<u32>(), val.parse::<u64>())
-                    {
-                        line_nodes.push((node_id, pages));
-                    }
+                } else if let Some(node_str) = key.strip_prefix('N')
+                    && let (Ok(node_id), Ok(pages)) =
+                        (node_str.parse::<u32>(), val.parse::<u64>())
+                {
+                    line_nodes.push((node_id, pages));
                 }
             }
         }

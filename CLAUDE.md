@@ -17,7 +17,7 @@ cargo build --release
 cargo run
 ./target/release/nv-swaptop
 
-# Run all tests (66 unit tests)
+# Run all tests (80 unit tests)
 cargo test
 
 # Run a single test
@@ -37,11 +37,10 @@ cargo check
 cargo clippy
 ```
 
-Requires Rust 1.88.0+ (edition 2024). GPU features require `nvidia-smi` in PATH (graceful fallback when absent). NUMA features require `/sys/devices/system/node/` (Linux only).
+Requires Rust 1.88.0+ (edition 2024). GPU features require `nvidia-smi` in PATH (graceful fallback when absent). NUMA features require `/sys/devices/system/node/`.
 
 ### Runtime Data Sources and Paths
 
-Linux:
 - **Swap**: `/proc/meminfo` (totals), `/proc/[pid]/status` (`VmSwap` field) via `procfs` crate
 - **Swap devices**: `/proc/swaps` via `proc-mounts` crate
 - **NUMA topology**: `/sys/devices/system/node/nodeN/meminfo`, `/sys/devices/system/node/nodeN/cpulist`
@@ -51,10 +50,6 @@ Linux:
 - **GPU**: `nvidia-smi` (resolved from PATH, no hardcoded path)
 - **GPU-NUMA mapping**: `/sys/bus/pci/devices/<pci_bus_id>/numa_node`
 
-Windows (deprecated, code exists but not built or supported):
-- **Swap**: `winapi` `GlobalMemoryStatusEx` (totals), `tasklist` crate (per-process pagefile)
-- **GPU**: same `nvidia-smi` from PATH
-
 ## Architecture
 
 ### Data Flow
@@ -63,39 +58,34 @@ Windows (deprecated, code exists but not built or supported):
 
 ### Platform Separation
 
-Heavy use of `#[cfg(target_os = "linux")]` / `#[cfg(target_os = "windows")]` throughout. Key differences:
-- Linux: has NUMA view (Tab 2), swap device listing, uses `procfs`/`proc-mounts` crates
-- Windows (deprecated): uses `winapi`/`tasklist` crates, no NUMA support
-- Both: swap view, GPU view, unified view
-
-Functions that differ by platform are implemented as separate `#[cfg(...)]` blocks rather than runtime detection. This includes `App::run()`, `App::render()`, `App::on_key_event()`, `merge_process_data()`, and the `SwapDataError` enum.
+Uses `#[cfg(target_os = "linux")]` throughout. Legacy `#[cfg(target_os = "windows")]` blocks exist in the code but Windows is not supported or built. Functions with platform-specific implementations use separate `#[cfg(...)]` blocks rather than runtime detection. This includes `App::run()`, `App::render()`, `App::on_key_event()`, `merge_process_data()`, and the `SwapDataError` enum.
 
 ### Module Organization
 
 ```tree
 src/
-  main.rs              # Thin entry point: creates App with ProcDataProvider, runs event loop
-  app.rs               # Event loop, state, TTL-based caching, key handling, view rendering dispatch
-  theme.rs             # 5 color themes (Default, Solarized, Monokai, Dracula, Nord)
-  data/
-    mod.rs             # DataProvider trait, ProcDataProvider, MockDataProvider, merge_process_data()
-    types.rs           # All shared types and pure utility functions (convert_swap, aggregate_processes)
-    swap.rs            # Swap data from /proc/meminfo (Linux) or winapi (Windows, deprecated)
-    numa.rs            # Pure NUMA parsing (meminfo, cpulist, numa_maps); sysfs topology discovery
-    gpu.rs             # nvidia-smi CSV parsing; all parsing is pure &str -> T for testability
-  ui/
-    mod.rs             # UI module re-exports
-    chart.rs           # Animated swap usage chart
-    process_list.rs    # Process list with scrolling
-    swap_devices.rs    # Swap device table (Linux only)
-    numa_view.rs       # NUMA topology + per-process distribution (Linux only)
-    gpu_view.rs        # GPU device summary + process list
-    unified_view.rs    # Combined CPU+GPU+NUMA process table
+├── main.rs              # Thin entry point: creates App with ProcDataProvider, runs event loop
+├── app.rs               # Event loop, state, TTL-based caching, key handling, view rendering dispatch
+├── theme.rs             # 5 color themes (Default, Solarized, Monokai, Dracula, Nord)
+├── data/
+│   ├── mod.rs           # DataProvider trait, ProcDataProvider, MockDataProvider, merge_process_data()
+│   ├── types.rs         # All shared types and pure utility functions (convert_swap, aggregate_processes)
+│   ├── swap.rs          # Swap data from /proc/meminfo
+│   ├── numa.rs          # Pure NUMA parsing (meminfo, cpulist, numa_maps); sysfs topology discovery
+│   └── gpu.rs           # nvidia-smi CSV parsing; all parsing is pure &str -> T for testability
+└── ui/
+    ├── mod.rs           # UI module re-exports
+    ├── chart.rs         # Animated swap usage chart
+    ├── process_list.rs  # Process list with scrolling
+    ├── swap_devices.rs  # Swap device table
+    ├── numa_view.rs     # NUMA topology + per-process distribution
+    ├── gpu_view.rs      # GPU device summary + process list
+    └── unified_view.rs  # Combined CPU+GPU+NUMA process table
 ```
 
 ### Key Design Patterns
 
-- **Pure parsing functions** — GPU and NUMA parsers take `&str` input and return typed data, no I/O. This is how the 66 tests work without real hardware.
+- **Pure parsing functions** — GPU and NUMA parsers take `&str` input and return typed data, no I/O. This is how the 80 tests work without real hardware.
 - **TTL caching** — `App` caches expensive data with different TTLs: NUMA topology (30s), NUMA maps (5s, only when NUMA view active), GPU devices (10s), GPU processes (1s).
 - **Lazy refresh** — NUMA maps only refresh when the NUMA tab is active. GPU data only refreshes when GPU or Unified tab is active.
 - **Unified view merge** — `merge_process_data()` joins swap, GPU, and NUMA data by PID. Detects HBM migration (CPU process with pages on a GPU HBM NUMA node).
