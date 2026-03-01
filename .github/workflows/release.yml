@@ -49,8 +49,7 @@ jobs:
             archive_format: tar.gz
           - target_os: linux
             rust_target: loongarch64-unknown-linux-gnu
-            cross_linker: loongarch64-linux-gnu-gcc
-            cross_pkg: gcc-loongarch64-linux-gnu
+            use_cross: true
             output_artifact_suffix: linux-loongarch64
             binary_name_suffix: ""
             archive_format: tar.gz
@@ -70,6 +69,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ${{ matrix.cross_pkg }}
+
+      - name: Install cross (Docker-based cross-compilation)
+        if: matrix.use_cross == true
+        run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Install jq (for parsing Cargo.toml metadata)
         run: sudo apt-get update && sudo apt-get install -y jq
@@ -98,7 +101,7 @@ jobs:
           RUSTFLAGS: -C strip=symbols
 
       - name: Build for Linux (cross-compile)
-        if: matrix.target_os == 'linux' && matrix.rust_target != ''
+        if: matrix.rust_target != '' && matrix.use_cross != true
         run: cargo build --release --target ${{ matrix.rust_target }}
         env:
           RUSTFLAGS: -C strip=symbols
@@ -106,7 +109,12 @@ jobs:
           CARGO_TARGET_POWERPC64LE_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross_linker }}
           CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross_linker }}
           CARGO_TARGET_S390X_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross_linker }}
-          CARGO_TARGET_LOONGARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross_linker }}
+
+      - name: Build for Linux (cross tool)
+        if: matrix.use_cross == true
+        run: cross build --release --target ${{ matrix.rust_target }}
+        env:
+          RUSTFLAGS: -C strip=symbols
 
       - name: Determine Binary Path and Archive Name
         id: binary_info
