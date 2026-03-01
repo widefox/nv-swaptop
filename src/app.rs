@@ -32,7 +32,7 @@ pub enum SortColumn {
 }
 
 impl SortColumn {
-    fn next(self) -> Self {
+    pub(crate) fn next(self) -> Self {
         match self {
             SortColumn::Swap => SortColumn::GpuMem,
             #[cfg(target_os = "linux")]
@@ -72,7 +72,7 @@ pub struct App {
     chart_data: Vec<(f64, f64)>,
     timeout: u64,
     visible_height: usize,
-    active_view: ActiveView,
+    pub(crate) active_view: ActiveView,
     #[cfg(target_os = "linux")]
     numa_nodes: Vec<NumaNode>,
     #[cfg(target_os = "linux")]
@@ -578,7 +578,7 @@ impl App {
         Ok(())
     }
 
-    fn cycle_view(&mut self) {
+    pub(crate) fn cycle_view(&mut self) {
         self.active_view = match self.active_view {
             ActiveView::Swap => {
                 #[cfg(target_os = "linux")]

@@ -3,6 +3,9 @@ mod data;
 mod theme;
 mod ui;
 
+#[cfg(test)]
+mod smoke_tests;
+
 use app::App;
 use data::ProcDataProvider;
 
