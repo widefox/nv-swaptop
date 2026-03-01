@@ -365,6 +365,7 @@ impl App {
                     &self.numa_nodes,
                     &self.process_numa_infos,
                     self.provider.is_numa_available(),
+                    &self.swap_size_unit,
                 );
             }
             ActiveView::Gpu => {

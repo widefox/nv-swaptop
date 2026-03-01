@@ -1,6 +1,6 @@
 use crate::data::types::{SizeUnits, UnifiedProcessInfo, convert_swap};
 #[cfg(target_os = "linux")]
-use crate::data::types::{NumaNode, NumaNodeType, PAGE_SIZE_KB};
+use crate::data::types::{NumaNode, NumaNodeType};
 use crate::theme::Theme;
 use ratatui::{
     Frame,
@@ -98,9 +98,8 @@ pub fn render_unified_view(
 
             // Per-node memory columns
             for &node_id in &node_ids {
-                let pages = proc.pages_per_node.get(&node_id).copied().unwrap_or(0);
-                let cell = if pages > 0 {
-                    let kb = pages * PAGE_SIZE_KB;
+                let kb = proc.kb_per_node.get(&node_id).copied().unwrap_or(0);
+                let cell = if kb > 0 {
                     format_mem(kb, unit)
                 } else {
                     "-".to_string()
@@ -110,7 +109,7 @@ pub fn render_unified_view(
                 let is_hbm = numa_nodes.iter().any(|n| {
                     n.id == node_id && matches!(n.node_type, NumaNodeType::GpuHbm { .. })
                 });
-                if is_hbm && pages > 0 {
+                if is_hbm && kb > 0 {
                     spans.push(Span::styled(
                         format!("{:>9}", cell),
                         Style::default().fg(Color::Rgb(255, 183, 77)),
@@ -208,7 +207,7 @@ pub fn render_unified_view(
     frame.render_widget(para, area);
 }
 
-fn format_mem(kb: u64, unit: &SizeUnits) -> String {
+pub(crate) fn format_mem(kb: u64, unit: &SizeUnits) -> String {
     let val = convert_swap(kb, unit.clone());
     let suffix = match unit {
         SizeUnits::KB => "KB",

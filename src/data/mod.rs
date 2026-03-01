@@ -71,7 +71,8 @@ impl DataProvider for ProcDataProvider {
     fn get_process_numa_maps(&self, pid: u32, name: &str) -> Result<ProcessNumaInfo, SwapDataError> {
         let path = format!("/proc/{}/numa_maps", pid);
         let content = std::fs::read_to_string(&path).map_err(SwapDataError::Io)?;
-        Ok(numa::parse_numa_maps(&content, pid, name))
+        let page_size_kb = procfs::page_size() / 1024;
+        Ok(numa::parse_numa_maps(&content, pid, name, page_size_kb))
     }
 
     #[cfg(target_os = "linux")]
@@ -189,8 +190,8 @@ impl DataProvider for MockDataProvider {
         Ok(ProcessNumaInfo {
             pid,
             name: name.to_string(),
-            pages_per_node: HashMap::from([(0, 100)]),
-            total_pages: 100,
+            kb_per_node: HashMap::from([(0, 400)]),
+            total_kb: 400,
             cpu_node: None,
         })
     }
@@ -243,8 +244,8 @@ pub fn merge_process_data(
             .into_iter()
             .collect::<Vec<_>>();
 
-        let pages_per_node = numa_info
-            .map(|n| n.pages_per_node.clone())
+        let kb_per_node = numa_info
+            .map(|n| n.kb_per_node.clone())
             .unwrap_or_default();
 
         by_pid.insert(
@@ -255,7 +256,7 @@ pub fn merge_process_data(
                 swap_kb: p.swap_size as u64,
                 cpu_nodes,
                 gpu_nodes: Vec::new(),
-                pages_per_node,
+                kb_per_node,
                 gpu_memory_kb: None,
                 gpu_indices: Vec::new(),
                 location: ProcessLocation::CpuOnly,
@@ -287,7 +288,7 @@ pub fn merge_process_data(
                     swap_kb: 0,
                     cpu_nodes: Vec::new(),
                     gpu_nodes: gpu_node.into_iter().collect(),
-                    pages_per_node: StdHashMap::new(),
+                    kb_per_node: StdHashMap::new(),
                     gpu_memory_kb: Some(gp.gpu_memory_used_kb),
                     gpu_indices: vec![gp.gpu_index],
                     location: ProcessLocation::GpuOnly,
@@ -306,7 +307,7 @@ pub fn merge_process_data(
     for info in numa_infos {
         if let Some(proc) = by_pid.get_mut(&info.pid) {
             for &node_id in &gpu_hbm_nodes {
-                if info.pages_per_node.get(&node_id).copied().unwrap_or(0) > 0 {
+                if info.kb_per_node.get(&node_id).copied().unwrap_or(0) > 0 {
                     if proc.location == ProcessLocation::CpuOnly {
                         proc.location = ProcessLocation::CpuAndGpu;
                     }
@@ -463,8 +464,8 @@ mod tests {
         let numa_infos = vec![ProcessNumaInfo {
             pid: 100,
             name: "migrated".into(),
-            pages_per_node: HashMap::from([(0, 500), (2, 100)]), // pages on node 2 (GPU HBM)
-            total_pages: 600,
+            kb_per_node: HashMap::from([(0, 500), (2, 100)]), // pages on node 2 (GPU HBM)
+            total_kb: 600,
             cpu_node: None,
         }];
         let numa_nodes = vec![
@@ -506,15 +507,15 @@ mod tests {
         let mut info = ProcessNumaInfo {
             pid: 42,
             name: "misaligned".into(),
-            pages_per_node: HashMap::from([(0, 500), (1, 100)]),
-            total_pages: 600,
+            kb_per_node: HashMap::from([(0, 500), (1, 100)]),
+            total_kb: 600,
             cpu_node: None,
         };
         info.cpu_node = cpu_node;
         assert_eq!(info.cpu_node, Some(1));
 
         // Dominant memory node is 0 (500 pages), but cpu_node is 1 — mismatch
-        let dominant_node = info.pages_per_node.iter().max_by_key(|(_, v)| **v).map(|(k, _)| *k);
+        let dominant_node = info.kb_per_node.iter().max_by_key(|(_, v)| **v).map(|(k, _)| *k);
         assert_eq!(dominant_node, Some(0));
         assert_ne!(info.cpu_node, dominant_node); // misaligned!
     }
@@ -554,19 +555,19 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_carries_pages_per_node() {
+    fn test_merge_carries_kb_per_node() {
         let swap = vec![ProcessSwapInfo {
             pid: 42, name: "app".into(), swap_size: 512.0,
             #[cfg(target_os = "linux")] last_cpu: None,
         }];
         let numa_infos = vec![ProcessNumaInfo {
             pid: 42, name: "app".into(),
-            pages_per_node: HashMap::from([(0, 500), (1, 200)]),
-            total_pages: 700, cpu_node: Some(0),
+            kb_per_node: HashMap::from([(0, 500), (1, 200)]),
+            total_kb: 700, cpu_node: Some(0),
         }];
         let result = merge_process_data(&swap, &[], &numa_infos, &[], &[]);
-        assert_eq!(result[0].pages_per_node.get(&0), Some(&500));
-        assert_eq!(result[0].pages_per_node.get(&1), Some(&200));
+        assert_eq!(result[0].kb_per_node.get(&0), Some(&500));
+        assert_eq!(result[0].kb_per_node.get(&1), Some(&200));
     }
 
     #[test]
@@ -577,8 +578,8 @@ mod tests {
         }];
         let numa_infos = vec![ProcessNumaInfo {
             pid: 42, name: "app".into(),
-            pages_per_node: HashMap::new(),
-            total_pages: 0, cpu_node: Some(1),
+            kb_per_node: HashMap::new(),
+            total_kb: 0, cpu_node: Some(1),
         }];
         let result = merge_process_data(&swap, &[], &numa_infos, &[], &[]);
         assert_eq!(result[0].cpu_nodes, vec![1]);
@@ -620,7 +621,7 @@ mod tests {
             #[cfg(target_os = "linux")] last_cpu: None,
         }];
         let result = merge_process_data(&swap, &[], &[], &[], &[]);
-        assert!(result[0].pages_per_node.is_empty());
+        assert!(result[0].kb_per_node.is_empty());
         assert!(result[0].cpu_nodes.is_empty());
         assert!(result[0].gpu_nodes.is_empty());
         assert!(result[0].gpu_indices.is_empty());
@@ -634,8 +635,8 @@ mod tests {
         }];
         let numa_infos = vec![ProcessNumaInfo {
             pid: 100, name: "migrated".into(),
-            pages_per_node: HashMap::from([(0, 500), (2, 100)]),
-            total_pages: 600, cpu_node: Some(0),
+            kb_per_node: HashMap::from([(0, 500), (2, 100)]),
+            total_kb: 600, cpu_node: Some(0),
         }];
         let numa_nodes = vec![
             NumaNode { id: 0, memory_total_kb: 16_000_000, memory_free_kb: 8_000_000, cpus: vec![0, 1], node_type: NumaNodeType::Cpu },
@@ -644,8 +645,8 @@ mod tests {
         let result = merge_process_data(&swap, &[], &numa_infos, &numa_nodes, &[]);
         assert_eq!(result[0].location, ProcessLocation::CpuAndGpu);
         assert_eq!(result[0].cpu_nodes, vec![0]);
-        assert_eq!(result[0].pages_per_node.get(&0), Some(&500));
-        assert_eq!(result[0].pages_per_node.get(&2), Some(&100));
+        assert_eq!(result[0].kb_per_node.get(&0), Some(&500));
+        assert_eq!(result[0].kb_per_node.get(&2), Some(&100));
         assert!(result[0].gpu_indices.is_empty()); // no GPU process, just HBM migration
     }
 }

@@ -75,33 +75,46 @@ pub fn classify_numa_node(node: &NumaNode, gpu_map: &HashMap<u32, u32>) -> NumaN
 }
 
 /// Parse /proc/[pid]/numa_maps content into ProcessNumaInfo.
-/// Each line has format: "address policy N0=pages N1=pages ..."
-pub fn parse_numa_maps(content: &str, pid: u32, name: &str) -> ProcessNumaInfo {
-    let mut pages_per_node: HashMap<u32, u64> = HashMap::new();
+/// Each line has format: "address policy N0=pages N1=pages ... kernelpagesize_kB=N"
+/// Page counts are multiplied by the per-line `kernelpagesize_kB` (or `default_page_size_kb`
+/// when absent) and accumulated as KB directly.
+pub fn parse_numa_maps(content: &str, pid: u32, name: &str, default_page_size_kb: u64) -> ProcessNumaInfo {
+    let mut kb_per_node: HashMap<u32, u64> = HashMap::new();
 
     for line in content.lines() {
+        let mut line_page_size_kb = default_page_size_kb;
+        let mut line_nodes: Vec<(u32, u64)> = Vec::new();
+
         for token in line.split_whitespace() {
             if let Some(eq_pos) = token.find('=') {
                 let key = &token[..eq_pos];
                 let val = &token[eq_pos + 1..];
-                // Match N<digit>=<pages> pattern
-                if key.starts_with('N') {
+
+                if key == "kernelpagesize_kB" {
+                    if let Ok(kps) = val.parse::<u64>() {
+                        line_page_size_kb = kps;
+                    }
+                } else if key.starts_with('N') {
                     if let (Ok(node_id), Ok(pages)) =
                         (key[1..].parse::<u32>(), val.parse::<u64>())
                     {
-                        *pages_per_node.entry(node_id).or_insert(0) += pages;
+                        line_nodes.push((node_id, pages));
                     }
                 }
             }
         }
+
+        for (node_id, pages) in line_nodes {
+            *kb_per_node.entry(node_id).or_insert(0) += pages * line_page_size_kb;
+        }
     }
 
-    let total_pages = pages_per_node.values().sum();
+    let total_kb = kb_per_node.values().sum();
     ProcessNumaInfo {
         pid,
         name: name.to_string(),
-        pages_per_node,
-        total_pages,
+        kb_per_node,
+        total_kb,
         cpu_node: None,
     }
 }
@@ -241,12 +254,12 @@ Node 0 MemUsed:         8192000 kB";
         let content = "\
 00400000 default N0=10 N1=5
 00600000 default N0=3 N2=7";
-        let info = parse_numa_maps(content, 42, "test_proc");
+        let info = parse_numa_maps(content, 42, "test_proc", 4);
         assert_eq!(info.pid, 42);
         assert_eq!(info.name, "test_proc");
-        assert_eq!(info.pages_per_node.get(&0), Some(&13));
-        assert_eq!(info.pages_per_node.get(&1), Some(&5));
-        assert_eq!(info.pages_per_node.get(&2), Some(&7));
+        assert_eq!(info.kb_per_node.get(&0), Some(&52));  // 13 pages * 4 KB
+        assert_eq!(info.kb_per_node.get(&1), Some(&20));  // 5 pages * 4 KB
+        assert_eq!(info.kb_per_node.get(&2), Some(&28));  // 7 pages * 4 KB
     }
 
     #[test]
@@ -256,25 +269,25 @@ Node 0 MemUsed:         8192000 kB";
 00400000 default N0=100
 00500000 default N0=200
 00600000 default N1=50";
-        let info = parse_numa_maps(content, 1, "proc");
-        assert_eq!(info.pages_per_node.get(&0), Some(&300));
-        assert_eq!(info.pages_per_node.get(&1), Some(&50));
+        let info = parse_numa_maps(content, 1, "proc", 4);
+        assert_eq!(info.kb_per_node.get(&0), Some(&1200));  // 300 pages * 4 KB
+        assert_eq!(info.kb_per_node.get(&1), Some(&200));   // 50 pages * 4 KB
     }
 
     #[test]
     fn test_parse_numa_maps_empty() {
-        let info = parse_numa_maps("", 1, "empty");
-        assert_eq!(info.total_pages, 0);
-        assert!(info.pages_per_node.is_empty());
+        let info = parse_numa_maps("", 1, "empty", 4);
+        assert_eq!(info.total_kb, 0);
+        assert!(info.kb_per_node.is_empty());
     }
 
     #[test]
-    fn test_total_pages_sum() {
+    fn test_total_kb_sum() {
         let content = "00400000 default N0=10 N1=20 N2=30";
-        let info = parse_numa_maps(content, 1, "proc");
-        let manual_sum: u64 = info.pages_per_node.values().sum();
-        assert_eq!(info.total_pages, manual_sum);
-        assert_eq!(info.total_pages, 60);
+        let info = parse_numa_maps(content, 1, "proc", 4);
+        let manual_sum: u64 = info.kb_per_node.values().sum();
+        assert_eq!(info.total_kb, manual_sum);
+        assert_eq!(info.total_kb, 240);  // 60 pages * 4 KB
     }
 
     #[test]
@@ -282,8 +295,8 @@ Node 0 MemUsed:         8192000 kB";
         let info = ProcessNumaInfo {
             pid: 42,
             name: "test".into(),
-            pages_per_node: HashMap::from([(0, 100), (1, 50)]),
-            total_pages: 150,
+            kb_per_node: HashMap::from([(0, 400), (1, 200)]),
+            total_kb: 600,
             cpu_node: Some(1),
         };
         assert_eq!(info.cpu_node, Some(1));
@@ -293,8 +306,71 @@ Node 0 MemUsed:         8192000 kB";
     fn test_parse_numa_maps_cpu_node_is_none() {
         // parse_numa_maps doesn't know about CPU scheduling, so cpu_node should be None
         let content = "00400000 default N0=10 N1=5";
-        let info = parse_numa_maps(content, 42, "test_proc");
+        let info = parse_numa_maps(content, 42, "test_proc", 4);
         assert_eq!(info.cpu_node, None);
+    }
+
+    // --- Page-size-aware tests ---
+
+    #[test]
+    fn test_parse_numa_maps_with_kernelpagesize() {
+        // Mix of 4KB and 2MB pages on same node
+        let content = "\
+00400000 default N0=8 kernelpagesize_kB=4
+00600000 default N0=512 kernelpagesize_kB=2048";
+        let info = parse_numa_maps(content, 1, "proc", 4);
+        // N0 = 8*4 + 512*2048 = 32 + 1,048,576 = 1,048,608 KB
+        assert_eq!(info.kb_per_node.get(&0), Some(&1_048_608));
+    }
+
+    #[test]
+    fn test_parse_numa_maps_mixed_pagesizes_multi_node() {
+        let content = "\
+00400000 default N0=100 N1=200 kernelpagesize_kB=4
+00600000 default N0=200 kernelpagesize_kB=2048
+00800000 default N1=10 kernelpagesize_kB=64";
+        let info = parse_numa_maps(content, 1, "proc", 4);
+        // N0 = 100*4 + 200*2048 = 400 + 409,600 = 410,000 KB
+        assert_eq!(info.kb_per_node.get(&0), Some(&410_000));
+        // N1 = 200*4 + 10*64 = 800 + 640 = 1,440 KB
+        assert_eq!(info.kb_per_node.get(&1), Some(&1_440));
+    }
+
+    #[test]
+    fn test_parse_numa_maps_default_64kb() {
+        // No kernelpagesize_kB, default is 64 (aarch64)
+        let content = "\
+00400000 default N0=10 N1=5";
+        let info = parse_numa_maps(content, 1, "proc", 64);
+        assert_eq!(info.kb_per_node.get(&0), Some(&640));   // 10 * 64
+        assert_eq!(info.kb_per_node.get(&1), Some(&320));   // 5 * 64
+    }
+
+    #[test]
+    fn test_parse_numa_maps_hugepages_1gb() {
+        let content = "7f000000 default N0=4 kernelpagesize_kB=1048576";
+        let info = parse_numa_maps(content, 1, "proc", 4);
+        // 4 * 1,048,576 = 4,194,304 KB
+        assert_eq!(info.kb_per_node.get(&0), Some(&4_194_304));
+    }
+
+    #[test]
+    fn test_parse_numa_maps_kernelpagesize_before_nodes() {
+        // kernelpagesize_kB appears before N= tokens
+        let content = "00400000 default kernelpagesize_kB=2048 N0=100";
+        let info = parse_numa_maps(content, 1, "proc", 4);
+        assert_eq!(info.kb_per_node.get(&0), Some(&204_800));  // 100 * 2048
+    }
+
+    #[test]
+    fn test_parse_numa_maps_line_without_nodes() {
+        // First line has kernelpagesize but no N= tokens; should not contribute
+        let content = "\
+00400000 default kernelpagesize_kB=2048
+00600000 default N0=10 kernelpagesize_kB=4";
+        let info = parse_numa_maps(content, 1, "proc", 4);
+        assert_eq!(info.kb_per_node.get(&0), Some(&40));  // 10 * 4
+        assert_eq!(info.total_kb, 40);
     }
 
     #[test]

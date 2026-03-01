@@ -159,9 +159,9 @@ nv-swaptop --demo   # auto-cycle all views and quit (for recording)
 │     2  GPU HBM     96.00 GB    82.45 GB    (none)      │
 │                                                        │
 │  Per-Process NUMA Distribution (top 20):               │
-│     PID  NAME               CPU  TOTAL PG  N0    N1    │
-│   12045  firefox              0*    15230  6870  8360  │
-│    8923  training_job         0      9840  9200   640  │
+│     PID  NAME               CPU     TOTAL       N0       N1    │
+│   12045  firefox              0*  59.49 MB  26.84 MB 32.66 MB  │
+│    8923  training_job         0   38.44 MB  35.94 MB  2.50 MB  │
 │  * = amber: CPU node ≠ dominant memory node            │
 ╰────────────────────────────────────────────────────────╯
 ```
@@ -227,7 +227,7 @@ src/
     unified_view.rs    # Combined CPU+GPU+NUMA process table
 ```
 
-All data collection is behind a `DataProvider` trait, enabling mock-based testing. Parsing functions are pure (`&str -> T`) for full testability without real hardware. 66 unit tests cover type conversions, aggregation, NUMA/GPU parsing, CPU-to-NUMA mapping, process merging, and demo mode scheduling.
+All data collection is behind a `DataProvider` trait, enabling mock-based testing. Parsing functions are pure (`&str -> T`) for full testability without real hardware. 80 unit tests cover type conversions, aggregation, NUMA/GPU parsing, page-size-aware numa_maps parsing, CPU-to-NUMA mapping, process merging, and demo mode scheduling.
 
 ## Technical Details
 
@@ -238,11 +238,18 @@ All data collection is behind a `DataProvider` trait, enabling mock-based testin
 - **GPU**: `nvidia-smi` (from PATH) `--query-compute-apps` and `--query-gpu` CSV output
 - **GPU-NUMA mapping**: `/sys/bus/pci/devices/<pci_bus_id>/numa_node` (Linux only)
 
+### Page Size Handling
+NUMA memory values are parsed from `/proc/[pid]/numa_maps`, where each mapping line reports page counts that may use a different page size. nv-swaptop handles this correctly:
+
+- **Architecture-dependent base pages**: x86_64 uses 4 KB pages, aarch64 (NVIDIA Grace) uses 64 KB. Detected at runtime via `procfs::page_size()`.
+- **Per-line `kernelpagesize_kB`**: Each mapping line in `numa_maps` can specify its own page size (e.g., `kernelpagesize_kB=2048` for THP, `kernelpagesize_kB=1048576` for 1 GB hugetlb pages). When present, this overrides the default for that line.
+- **Mixed page sizes**: A single process can have 4 KB, 2 MB (THP), and 1 GB (hugetlb) pages simultaneously. Page counts are multiplied by their per-line page size and accumulated as KB at parse time, since raw page counts across different page sizes are not comparable.
+
 ### Caching
 | Data Source | TTL | Notes |
 |---|---|---|
 | NUMA topology | 30s | Topology rarely changes |
-| NUMA maps | 5s | Only refreshed when NUMA view is active, top 20 processes |
+| NUMA maps | 5s | Only refreshed when NUMA or Unified view is active, top 20 processes |
 | GPU devices | 10s | Device info changes rarely |
 | GPU processes | 1s | Process list changes frequently |
 

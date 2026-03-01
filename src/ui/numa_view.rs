@@ -1,5 +1,6 @@
-use crate::data::types::{NumaNode, NumaNodeType, ProcessNumaInfo};
+use crate::data::types::{NumaNode, NumaNodeType, ProcessNumaInfo, SizeUnits};
 use crate::theme::Theme;
+use crate::ui::unified_view::format_mem;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -15,6 +16,7 @@ pub fn render_numa_view(
     numa_nodes: &[NumaNode],
     process_numa_infos: &[ProcessNumaInfo],
     numa_available: bool,
+    unit: &SizeUnits,
 ) {
     if !numa_available || numa_nodes.is_empty() {
         let block = Block::bordered()
@@ -35,7 +37,7 @@ pub fn render_numa_view(
         .split(area);
 
     render_topology_table(frame, chunks[0], theme, numa_nodes);
-    render_process_numa_distribution(frame, chunks[1], theme, process_numa_infos, numa_nodes);
+    render_process_numa_distribution(frame, chunks[1], theme, process_numa_infos, numa_nodes, unit);
 }
 
 fn render_topology_table(
@@ -110,10 +112,11 @@ fn render_process_numa_distribution(
     theme: &Theme,
     process_infos: &[ProcessNumaInfo],
     numa_nodes: &[NumaNode],
+    unit: &SizeUnits,
 ) {
     let mut lines = Vec::new();
 
-    // Header: PID | PROCESS | CPU | TOTAL PG | N0 | N1 | ...
+    // Header: PID | PROCESS | CPU | TOTAL | N0 | N1 | ...
     let mut header_spans = vec![
         format!("{:>8}", "PID").bold(),
         " | ".into(),
@@ -121,18 +124,18 @@ fn render_process_numa_distribution(
         " | ".into(),
         format!("{:>3}", "CPU").bold(),
         " | ".into(),
-        format!("{:>10}", "TOTAL PG").bold(),
+        format!("{:>10}", "TOTAL").bold(),
     ];
     for node in numa_nodes {
         header_spans.push(" | ".into());
-        header_spans.push(format!("{:>8}", format!("N{}", node.id)).bold());
+        header_spans.push(format!("{:>10}", format!("N{}", node.id)).bold());
     }
     lines.push(Line::from(header_spans));
 
     for info in process_infos.iter().take(20) {
-        // Determine dominant memory node (node with most pages)
+        // Determine dominant memory node (node with most KB)
         let dominant_node = info
-            .pages_per_node
+            .kb_per_node
             .iter()
             .max_by_key(|(_, v)| **v)
             .map(|(k, _)| *k);
@@ -160,12 +163,17 @@ fn render_process_numa_distribution(
             " | ".into(),
             cpu_span,
             " | ".into(),
-            format!("{:>10}", info.total_pages).into(),
+            format!("{:>10}", format_mem(info.total_kb, unit)).into(),
         ];
         for node in numa_nodes {
-            let pages = info.pages_per_node.get(&node.id).copied().unwrap_or(0);
+            let kb = info.kb_per_node.get(&node.id).copied().unwrap_or(0);
+            let cell = if kb > 0 {
+                format_mem(kb, unit)
+            } else {
+                "-".to_string()
+            };
             spans.push(" | ".into());
-            spans.push(format!("{:>8}", pages).into());
+            spans.push(format!("{:>10}", cell).into());
         }
         lines.push(Line::from(spans));
     }

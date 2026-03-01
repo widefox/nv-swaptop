@@ -77,8 +77,8 @@ pub struct NumaNode {
 pub struct ProcessNumaInfo {
     pub pid: u32,
     pub name: String,
-    pub pages_per_node: HashMap<u32, u64>,
-    pub total_pages: u64,
+    pub kb_per_node: HashMap<u32, u64>,
+    pub total_kb: u64,
     pub cpu_node: Option<u32>,
 }
 
@@ -123,9 +123,6 @@ pub enum ProcessLocation {
     CpuAndGpu,
 }
 
-/// Page size in KB for converting numa_maps page counts to memory sizes.
-pub const PAGE_SIZE_KB: u64 = 4;
-
 #[derive(Debug, Clone)]
 pub struct UnifiedProcessInfo {
     pub pid: u32,
@@ -136,7 +133,7 @@ pub struct UnifiedProcessInfo {
     #[cfg(target_os = "linux")]
     pub gpu_nodes: Vec<u32>,
     #[cfg(target_os = "linux")]
-    pub pages_per_node: HashMap<u32, u64>,
+    pub kb_per_node: HashMap<u32, u64>,
     pub gpu_memory_kb: Option<u64>,
     pub gpu_indices: Vec<u32>,
     pub location: ProcessLocation,
