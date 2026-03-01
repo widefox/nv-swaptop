@@ -44,7 +44,7 @@ A real-time terminal monitor for **swap usage**, **NUMA topology**, and **GPU me
 - Unit conversion (KB/MB/GB)
 - Configurable refresh interval (100ms–10s)
 - TTL-based caching for expensive data sources (NUMA topology, nvidia-smi)
-- Linux: x86_64, ARM64 (aarch64), Power (ppc64le)
+- Linux: x86_64, ARM64, Power, RISC-V, s390x, LoongArch
 - Windows: deprecated (builds are not provided)
 
 ## Use Cases
@@ -64,6 +64,9 @@ A real-time terminal monitor for **swap usage**, **NUMA topology**, and **GPU me
 | Linux | x86_64 (amd64) | Supported |
 | Linux | ARM64 (aarch64) | Supported |
 | Linux | Power (ppc64le) | Supported |
+| Linux | RISC-V (riscv64) | Supported |
+| Linux | s390x | Supported |
+| Linux | LoongArch (loongarch64) | Supported |
 | Windows | x86_64 | Deprecated |
 
 > [!WARNING]
