@@ -4,3 +4,19 @@
 .claude/
 .mcp.json
 PROMPT.md
+
+# Claude Code sandbox dotfiles and bare git files dropped in repo root
+.bash_profile
+.bashrc
+.gitconfig
+.gitmodules
+.profile
+.ripgreprc
+.zprofile
+.zshrc
+HEAD
+config
+hooks
+objects
+refs
+plan.md
