@@ -1,6 +1,4 @@
-use crate::data::{ActiveView, DataProvider, GpuDevice, GpuProcessInfo, SizeUnits, SwapUpdate, UnifiedProcessInfo};
-#[cfg(target_os = "linux")]
-use crate::data::{NumaNode, ProcessNumaInfo};
+use crate::data::{ActiveView, DataProvider, GpuDevice, GpuProcessInfo, NumaNode, ProcessNumaInfo, SizeUnits, SwapUpdate, UnifiedProcessInfo};
 use crate::theme::{Theme, ThemeType};
 use crate::ui;
 use color_eyre::Result;
@@ -14,8 +12,6 @@ use ratatui::{
 };
 use std::time::{Duration, Instant};
 
-const LINUX: bool = cfg!(target_os = "linux");
-
 // Cache TTLs
 const NUMA_TOPOLOGY_TTL: Duration = Duration::from_secs(30);
 const NUMA_MAPS_TTL: Duration = Duration::from_secs(5);
@@ -27,7 +23,6 @@ pub enum SortColumn {
     Swap,
     GpuMem,
     Name,
-    #[cfg(target_os = "linux")]
     NumaNode,
 }
 
@@ -35,11 +30,7 @@ impl SortColumn {
     pub(crate) fn next(self) -> Self {
         match self {
             SortColumn::Swap => SortColumn::GpuMem,
-            #[cfg(target_os = "linux")]
             SortColumn::GpuMem => SortColumn::NumaNode,
-            #[cfg(not(target_os = "linux"))]
-            SortColumn::GpuMem => SortColumn::Name,
-            #[cfg(target_os = "linux")]
             SortColumn::NumaNode => SortColumn::Name,
             SortColumn::Name => SortColumn::Swap,
         }
@@ -50,7 +41,6 @@ impl SortColumn {
             SortColumn::Swap => "swap",
             SortColumn::GpuMem => "gpu_mem",
             SortColumn::Name => "name",
-            #[cfg(target_os = "linux")]
             SortColumn::NumaNode => "numa",
         }
     }
@@ -73,9 +63,7 @@ pub struct App {
     timeout: u64,
     visible_height: usize,
     pub(crate) active_view: ActiveView,
-    #[cfg(target_os = "linux")]
     numa_nodes: Vec<NumaNode>,
-    #[cfg(target_os = "linux")]
     process_numa_infos: Vec<ProcessNumaInfo>,
     gpu_devices: Vec<GpuDevice>,
     gpu_processes: Vec<GpuProcessInfo>,
@@ -84,9 +72,7 @@ pub struct App {
     demo: bool,
     demo_start: Option<Instant>,
     // Cache timestamps
-    #[cfg(target_os = "linux")]
     numa_topology_last: Option<Instant>,
-    #[cfg(target_os = "linux")]
     numa_maps_last: Option<Instant>,
     gpu_devices_last: Option<Instant>,
     gpu_processes_last: Option<Instant>,
@@ -111,9 +97,7 @@ impl App {
             timeout: 1000,
             visible_height: 0,
             active_view: ActiveView::default(),
-            #[cfg(target_os = "linux")]
             numa_nodes: Vec::new(),
-            #[cfg(target_os = "linux")]
             process_numa_infos: Vec::new(),
             gpu_devices: Vec::new(),
             gpu_processes: Vec::new(),
@@ -121,16 +105,13 @@ impl App {
             sort_column: SortColumn::Swap,
             demo,
             demo_start: None,
-            #[cfg(target_os = "linux")]
             numa_topology_last: None,
-            #[cfg(target_os = "linux")]
             numa_maps_last: None,
             gpu_devices_last: None,
             gpu_processes_last: None,
         }
     }
 
-    #[cfg(target_os = "linux")]
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         self.running = true;
         if self.demo {
@@ -179,45 +160,6 @@ impl App {
         Ok(())
     }
 
-    #[cfg(target_os = "windows")]
-    pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
-        self.running = true;
-        if self.demo {
-            self.demo_start = Some(Instant::now());
-        }
-        self.swap_processes_lines = ui::process_list::create_process_lines(
-            self.provider.as_ref(),
-            &self.swap_size_unit,
-            self.aggregated,
-        );
-        self.chart_info = self.provider.get_swap_info(&self.swap_size_unit)?;
-        self.last_update = Some(Instant::now());
-
-        while self.running {
-            if event::poll(Duration::from_millis(100))? {
-                self.handle_crossterm_events()?;
-            }
-
-            if let Some(last_update) = self.last_update
-                && last_update.elapsed() >= Duration::from_millis(self.timeout)
-            {
-                self.chart_info = self.provider.get_swap_info(&self.swap_size_unit)?;
-                self.update_chart_data();
-                self.last_update = Some(Instant::now());
-                self.swap_processes_lines = ui::process_list::create_process_lines(
-                    self.provider.as_ref(),
-                    &self.swap_size_unit,
-                    self.aggregated,
-                );
-            }
-
-            terminal.draw(|frame| self.render(frame))?;
-            self.demo_auto_cycle();
-        }
-        Ok(())
-    }
-
-    #[cfg(target_os = "linux")]
     fn refresh_numa_data(&mut self) {
         if !self.provider.is_numa_available() {
             return;
@@ -299,7 +241,6 @@ impl App {
         }
     }
 
-    #[cfg(target_os = "linux")]
     fn refresh_unified_data(&mut self) {
         let swap_procs = self
             .provider
@@ -311,19 +252,6 @@ impl App {
             &self.process_numa_infos,
             &self.numa_nodes,
             &self.gpu_devices,
-        );
-        self.sort_unified_procs();
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    fn refresh_unified_data(&mut self) {
-        let swap_procs = self
-            .provider
-            .get_processes_swap(&self.swap_size_unit)
-            .unwrap_or_default();
-        self.unified_procs = crate::data::merge_process_data(
-            &swap_procs,
-            &self.gpu_processes,
         );
         self.sort_unified_procs();
     }
@@ -341,14 +269,12 @@ impl App {
             SortColumn::Name => {
                 self.unified_procs.sort_by(|a, b| a.name.cmp(&b.name));
             }
-            #[cfg(target_os = "linux")]
             SortColumn::NumaNode => {
                 self.unified_procs.sort_by(|a, b| a.cpu_nodes.first().cmp(&b.cpu_nodes.first()));
             }
         }
     }
 
-    #[cfg(target_os = "linux")]
     fn render(&mut self, frame: &mut Frame) {
         let theme = Theme::from(self.current_theme);
 
@@ -394,7 +320,6 @@ impl App {
         frame.render_widget(main_block, frame.area());
     }
 
-    #[cfg(target_os = "linux")]
     fn render_swap_view(&mut self, frame: &mut Frame, main_area: ratatui::layout::Rect, theme: &Theme) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -463,71 +388,9 @@ impl App {
         }
     }
 
-    #[cfg(target_os = "windows")]
-    fn render(&mut self, frame: &mut Frame) {
-        let theme = Theme::from(self.current_theme);
-
-        let main_block = self.create_main_block(&theme);
-        let main_area = main_block.inner(frame.area());
-
-        match self.active_view {
-            ActiveView::Gpu => {
-                ui::gpu_view::render_gpu_view(
-                    frame,
-                    main_area,
-                    &theme,
-                    &self.gpu_devices,
-                    &self.gpu_processes,
-                    self.provider.is_gpu_available(),
-                    &self.swap_size_unit,
-                );
-            }
-            ActiveView::Unified => {
-                ui::unified_view::render_unified_view(
-                    frame,
-                    main_area,
-                    &theme,
-                    &self.unified_procs,
-                    &self.swap_size_unit,
-                );
-            }
-            _ => {
-                let chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
-                    .split(main_area);
-
-                ui::chart::render_animated_chart(
-                    frame,
-                    chunks[0],
-                    &theme,
-                    &self.chart_data,
-                    self.time_window,
-                    self.chart_info.total_swap,
-                    self.chart_info.used_swap,
-                    &self.swap_size_unit,
-                    self.display_devices,
-                );
-                ui::process_list::render_processes_list(
-                    frame,
-                    chunks[1],
-                    &theme,
-                    &self.swap_size_unit,
-                    &self.swap_processes_lines,
-                    &mut self.vertical_scroll,
-                    &mut self.vertical_scroll_state,
-                    &mut self.visible_height,
-                );
-            }
-        }
-
-        frame.render_widget(main_block, frame.area());
-    }
-
     fn create_main_block(&self, theme: &Theme) -> Block<'static> {
         let view_label = match self.active_view {
             ActiveView::Swap => "Swap",
-            #[cfg(target_os = "linux")]
             ActiveView::Numa => "NUMA",
             ActiveView::Gpu => "GPU",
             ActiveView::Unified => "Unified",
@@ -580,20 +443,13 @@ impl App {
 
     pub(crate) fn cycle_view(&mut self) {
         self.active_view = match self.active_view {
-            ActiveView::Swap => {
-                #[cfg(target_os = "linux")]
-                { ActiveView::Numa }
-                #[cfg(not(target_os = "linux"))]
-                { ActiveView::Gpu }
-            }
-            #[cfg(target_os = "linux")]
+            ActiveView::Swap => ActiveView::Numa,
             ActiveView::Numa => ActiveView::Gpu,
             ActiveView::Gpu => ActiveView::Unified,
             ActiveView::Unified => ActiveView::Swap,
         };
     }
 
-    #[cfg(target_os = "linux")]
     fn on_key_event(&mut self, key: KeyEvent) {
         if key.kind != KeyEventKind::Press {
             return;
@@ -654,82 +510,7 @@ impl App {
             KeyCode::Char('a') => self.aggregated = !self.aggregated,
             KeyCode::Char('t') => self.cycle_theme(),
             KeyCode::Char('s') => self.sort_column = self.sort_column.next(),
-            KeyCode::Char('h') => {
-                if LINUX {
-                    self.display_devices = !self.display_devices
-                }
-            }
-            KeyCode::Left | KeyCode::Right => self.change_timout(key.code),
-
-            _ => {}
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    fn on_key_event(&mut self, key: KeyEvent) {
-        if key.kind != KeyEventKind::Press {
-            return;
-        }
-
-        match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => self.quit(),
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.quit(),
-
-            // View switching
-            KeyCode::Tab => self.cycle_view(),
-            KeyCode::Char('1') => self.active_view = ActiveView::Swap,
-            KeyCode::Char('3') => self.active_view = ActiveView::Gpu,
-            KeyCode::Char('4') => self.active_view = ActiveView::Unified,
-
-            KeyCode::Char('d') | KeyCode::Down => {
-                self.vertical_scroll = self.vertical_scroll.saturating_add(1);
-                self.vertical_scroll_state =
-                    self.vertical_scroll_state.position(self.vertical_scroll);
-            }
-            KeyCode::Char('u') | KeyCode::Up => {
-                self.vertical_scroll = self.vertical_scroll.saturating_sub(1);
-                self.vertical_scroll_state =
-                    self.vertical_scroll_state.position(self.vertical_scroll);
-            }
-            KeyCode::End => {
-                self.vertical_scroll = self.swap_processes_lines.len();
-                self.vertical_scroll_state =
-                    self.vertical_scroll_state.position(self.vertical_scroll);
-            }
-            KeyCode::Home => {
-                self.vertical_scroll = 0;
-                self.vertical_scroll_state =
-                    self.vertical_scroll_state.position(self.vertical_scroll);
-            }
-
-            KeyCode::PageDown => {
-                let page_size = self.visible_height.saturating_sub(4);
-                self.vertical_scroll = self
-                    .vertical_scroll
-                    .saturating_add(page_size)
-                    .min(self.swap_processes_lines.len().saturating_sub(1));
-                self.vertical_scroll_state =
-                    self.vertical_scroll_state.position(self.vertical_scroll);
-            }
-            KeyCode::PageUp => {
-                let page_size = self.visible_height.saturating_sub(4);
-                self.vertical_scroll = self.vertical_scroll.saturating_sub(page_size);
-                self.vertical_scroll_state =
-                    self.vertical_scroll_state.position(self.vertical_scroll);
-            }
-
-            KeyCode::Char('k') => self.change_unit(SizeUnits::KB),
-            KeyCode::Char('m') => self.change_unit(SizeUnits::MB),
-            KeyCode::Char('g') => self.change_unit(SizeUnits::GB),
-
-            KeyCode::Char('a') => self.aggregated = !self.aggregated,
-            KeyCode::Char('t') => self.cycle_theme(),
-            KeyCode::Char('s') => self.sort_column = self.sort_column.next(),
-            KeyCode::Char('h') => {
-                if LINUX {
-                    self.display_devices = !self.display_devices
-                }
-            }
+            KeyCode::Char('h') => self.display_devices = !self.display_devices,
             KeyCode::Left | KeyCode::Right => self.change_timout(key.code),
 
             _ => {}
@@ -797,12 +578,7 @@ impl App {
 fn demo_view_for_elapsed(secs: u64) -> Option<ActiveView> {
     match secs {
         0..4 => Some(ActiveView::Swap),
-        4..8 => {
-            #[cfg(target_os = "linux")]
-            { Some(ActiveView::Numa) }
-            #[cfg(not(target_os = "linux"))]
-            { Some(ActiveView::Gpu) }
-        }
+        4..8 => Some(ActiveView::Numa),
         8..12 => Some(ActiveView::Gpu),
         12..16 => Some(ActiveView::Unified),
         _ => None,
@@ -852,22 +628,14 @@ mod tests {
         assert_eq!(demo_view_for_elapsed(3), Some(ActiveView::Swap));
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn test_demo_view_numa_at_4s() {
         assert_eq!(demo_view_for_elapsed(4), Some(ActiveView::Numa));
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn test_demo_view_numa_at_7s() {
         assert_eq!(demo_view_for_elapsed(7), Some(ActiveView::Numa));
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    #[test]
-    fn test_demo_view_gpu_at_4s_windows() {
-        assert_eq!(demo_view_for_elapsed(4), Some(ActiveView::Gpu));
     }
 
     #[test]
@@ -948,17 +716,15 @@ mod tests {
 
     #[test]
     fn test_demo_boundary_3_to_4() {
-        // 3s = Swap, 4s = next view (NUMA on Linux, GPU on Windows)
+        // 3s = Swap, 4s = Numa
         assert_eq!(demo_view_for_elapsed(3), Some(ActiveView::Swap));
-        let at_4 = demo_view_for_elapsed(4).unwrap();
-        assert_ne!(at_4, ActiveView::Swap);
+        assert_eq!(demo_view_for_elapsed(4), Some(ActiveView::Numa));
     }
 
     #[test]
     fn test_demo_boundary_7_to_8() {
-        let at_7 = demo_view_for_elapsed(7).unwrap();
+        assert_eq!(demo_view_for_elapsed(7), Some(ActiveView::Numa));
         assert_eq!(demo_view_for_elapsed(8), Some(ActiveView::Gpu));
-        assert_ne!(at_7, ActiveView::Gpu);
     }
 
     #[test]
@@ -981,10 +747,7 @@ mod tests {
             .map(|&s| demo_view_for_elapsed(s).unwrap())
             .collect();
         assert_eq!(views[0], ActiveView::Swap);
-        #[cfg(target_os = "linux")]
         assert_eq!(views[1], ActiveView::Numa);
-        #[cfg(not(target_os = "linux"))]
-        assert_eq!(views[1], ActiveView::Gpu);
         assert_eq!(views[2], ActiveView::Gpu);
         assert_eq!(views[3], ActiveView::Unified);
         assert!(demo_view_for_elapsed(16).is_none());
@@ -992,7 +755,6 @@ mod tests {
 
     // --- Unified view data tests ---
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn test_refresh_unified_data_populates_new_fields() {
         use crate::data::{GpuDevice, GpuProcessInfo, ProcessLocation};

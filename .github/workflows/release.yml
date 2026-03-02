@@ -165,6 +165,9 @@ jobs:
 
           cp README.md LICENSE "${STAGING_DIR}/" 2>/dev/null || true
 
+          MANPAGE=$(find target -name "nv-swaptop.1" -path "*/out/*" 2>/dev/null | head -1)
+          if [ -n "$MANPAGE" ]; then cp "$MANPAGE" "${STAGING_DIR}/"; fi
+
           FINAL_ARCHIVE_NAME="${ARCHIVE_BASENAME}.tar.gz"
           tar -czvf "${FINAL_ARCHIVE_NAME}" -C "${STAGING_DIR}" .
 

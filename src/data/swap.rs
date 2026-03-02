@@ -1,11 +1,8 @@
 use super::types::*;
 
-#[cfg(target_os = "linux")]
 use proc_mounts::SwapIter;
-#[cfg(target_os = "linux")]
 use procfs::{self, Current, Meminfo};
 
-#[cfg(target_os = "linux")]
 pub fn get_swap_devices(unit: SizeUnits) -> std::io::Result<Vec<InfoSwap>> {
     let mut out = Vec::new();
     for swap in SwapIter::new()? {
@@ -21,7 +18,6 @@ pub fn get_swap_devices(unit: SizeUnits) -> std::io::Result<Vec<InfoSwap>> {
     Ok(out)
 }
 
-#[cfg(target_os = "linux")]
 pub fn get_processes_using_swap(unit: SizeUnits) -> Result<Vec<ProcessSwapInfo>, SwapDataError> {
     let mut swap_processes = Vec::new();
 
@@ -49,7 +45,6 @@ pub fn get_processes_using_swap(unit: SizeUnits) -> Result<Vec<ProcessSwapInfo>,
     Ok(swap_processes)
 }
 
-#[cfg(target_os = "linux")]
 pub fn find_mount_device(path: &std::path::Path) -> Option<String> {
     let abs_path = path.canonicalize().ok()?;
 
@@ -69,29 +64,6 @@ pub fn find_mount_device(path: &std::path::Path) -> Option<String> {
     })
 }
 
-#[cfg(target_os = "windows")]
-pub fn get_processes_using_swap(unit: SizeUnits) -> Result<Vec<ProcessSwapInfo>, SwapDataError> {
-    let mut profile_page_processes = Vec::new();
-
-    if let Ok(tasks) = tasklist::Tasklist::new() {
-        for task in tasks {
-            let meminfo = task.get_memory_info();
-
-            let info = ProcessSwapInfo {
-                pid: task.pid,
-                name: task.pname,
-                swap_size: convert_swap(meminfo.get_pagefile_usage() as u64 / 1024, unit.clone()),
-                #[cfg(target_os = "linux")]
-                last_cpu: None,
-            };
-            profile_page_processes.push(info);
-        }
-    }
-
-    Ok(profile_page_processes)
-}
-
-#[cfg(target_os = "linux")]
 pub fn get_chart_info(unit: SizeUnits) -> Result<SwapUpdate, SwapDataError> {
     let meminfo = Meminfo::current()?;
 
@@ -103,32 +75,4 @@ pub fn get_chart_info(unit: SizeUnits) -> Result<SwapUpdate, SwapDataError> {
         total_swap: total_swap_kb,
         used_swap: used_swap_kb,
     })
-}
-
-#[cfg(target_os = "windows")]
-pub fn get_chart_info() -> Result<SwapUpdate, SwapDataError> {
-    use std::mem::MaybeUninit;
-    use winapi::um::sysinfoapi::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
-
-    unsafe {
-        let mut mem_status = MaybeUninit::<MEMORYSTATUSEX>::zeroed();
-        mem_status.as_mut_ptr().write(MEMORYSTATUSEX {
-            dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
-            ..Default::default()
-        });
-
-        if GlobalMemoryStatusEx(mem_status.as_mut_ptr()) == 0 {
-            return Err(SwapDataError::Io(std::io::Error::last_os_error()));
-        }
-
-        let mem_status = mem_status.assume_init();
-
-        let total_swap = mem_status.ullTotalPageFile / 1024;
-        let used_swap = (mem_status.ullTotalPageFile - mem_status.ullAvailPageFile) / 1024;
-
-        Ok(SwapUpdate {
-            total_swap,
-            used_swap,
-        })
-    }
 }

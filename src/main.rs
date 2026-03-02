@@ -1,4 +1,5 @@
 mod app;
+mod cli;
 mod data;
 mod theme;
 mod ui;
@@ -7,13 +8,14 @@ mod ui;
 mod smoke_tests;
 
 use app::App;
+use clap::Parser;
 use data::ProcDataProvider;
 
 fn main() -> color_eyre::Result<()> {
-    let demo = std::env::args().any(|arg| arg == "--demo");
+    let cli = cli::Cli::parse();
     color_eyre::install()?;
     let terminal = ratatui::init();
-    let result = App::new(Box::new(ProcDataProvider), demo).run(terminal);
+    let result = App::new(Box::new(ProcDataProvider), cli.demo).run(terminal);
     ratatui::restore();
     result
 }

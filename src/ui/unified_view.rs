@@ -1,6 +1,4 @@
-use crate::data::types::{SizeUnits, UnifiedProcessInfo, convert_swap};
-#[cfg(target_os = "linux")]
-use crate::data::types::{NumaNode, NumaNodeType};
+use crate::data::types::{NumaNode, NumaNodeType, SizeUnits, UnifiedProcessInfo, convert_swap};
 use crate::theme::Theme;
 use ratatui::{
     Frame,
@@ -11,14 +9,10 @@ use ratatui::{
 };
 
 // NUMA memory locality colour constants
-#[cfg(target_os = "linux")]
 const COLOR_LOCAL_GREEN: Color = Color::Rgb(80, 200, 120);
-#[cfg(target_os = "linux")]
 const COLOR_REMOTE_ORANGE: Color = Color::Rgb(255, 183, 77);
-#[cfg(target_os = "linux")]
 const COLOR_HBM_RED: Color = Color::Rgb(255, 85, 85);
 
-#[cfg(target_os = "linux")]
 pub fn render_unified_view(
     frame: &mut Frame,
     area: Rect,
@@ -159,66 +153,6 @@ pub fn render_unified_view(
                 Span::raw(" "),
             ])
                 .right_aligned(),
-        );
-
-    let para = Paragraph::new(lines).block(block);
-    frame.render_widget(para, area);
-}
-
-#[cfg(not(target_os = "linux"))]
-pub fn render_unified_view(
-    frame: &mut Frame,
-    area: Rect,
-    theme: &Theme,
-    unified_procs: &[UnifiedProcessInfo],
-    unit: &SizeUnits,
-) {
-    let mut lines = Vec::new();
-
-    let header_spans: Vec<Span> = vec![
-        format!("{:>8}", "PID").bold(),
-        Span::from(" "),
-        format!("{:<20}", "NAME").bold(),
-        Span::from(" "),
-        format!("{:>10}", "SWAP").bold(),
-        Span::from(" "),
-        format!("{:>10}", "GPU MEM").bold(),
-    ];
-
-    lines.push(Line::from(header_spans));
-
-    if unified_procs.is_empty() {
-        lines.push(Line::from("  No process data available"));
-    } else {
-        for proc in unified_procs {
-            let swap_str = format_mem(proc.swap_kb, unit);
-            let gpu_str = proc
-                .gpu_memory_kb
-                .map(|kb| format_mem(kb, unit))
-                .unwrap_or_else(|| "-".into());
-
-            let spans: Vec<Span> = vec![
-                format!("{:>8}", proc.pid).into(),
-                " ".into(),
-                format!("{:<20}", truncate(&proc.name, 20)).into(),
-                " ".into(),
-                format!("{:>10}", swap_str).into(),
-                " ".into(),
-                format!("{:>10}", gpu_str).into(),
-            ];
-
-            lines.push(Line::from(spans));
-        }
-    }
-
-    let block = Block::bordered()
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(theme.border))
-        .style(Style::default().bg(theme.background))
-        .title(
-            Line::from(" Unified CPU+GPU View ")
-                .fg(theme.primary)
-                .bold(),
         );
 
     let para = Paragraph::new(lines).block(block);

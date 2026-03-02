@@ -1,22 +1,17 @@
 pub mod gpu;
 pub mod swap;
 pub mod types;
-#[cfg(target_os = "linux")]
 pub mod numa;
 
 pub use types::*;
 
-#[cfg(target_os = "linux")]
 use std::collections::HashMap;
 
 pub trait DataProvider {
     fn get_swap_info(&self, unit: &SizeUnits) -> Result<SwapUpdate, SwapDataError>;
     fn get_processes_swap(&self, unit: &SizeUnits) -> Result<Vec<ProcessSwapInfo>, SwapDataError>;
-    #[cfg(target_os = "linux")]
     fn get_numa_topology(&self) -> Result<Vec<NumaNode>, SwapDataError>;
-    #[cfg(target_os = "linux")]
     fn get_process_numa_maps(&self, pid: u32, name: &str) -> Result<ProcessNumaInfo, SwapDataError>;
-    #[cfg(target_os = "linux")]
     fn is_numa_available(&self) -> bool;
     fn get_gpu_devices(&self) -> Result<Vec<GpuDevice>, SwapDataError>;
     fn get_gpu_processes(&self) -> Result<Vec<GpuProcessInfo>, SwapDataError>;
@@ -26,21 +21,14 @@ pub trait DataProvider {
 pub struct ProcDataProvider;
 
 impl DataProvider for ProcDataProvider {
-    #[cfg(target_os = "linux")]
     fn get_swap_info(&self, unit: &SizeUnits) -> Result<SwapUpdate, SwapDataError> {
         swap::get_chart_info(unit.clone())
-    }
-
-    #[cfg(target_os = "windows")]
-    fn get_swap_info(&self, _unit: &SizeUnits) -> Result<SwapUpdate, SwapDataError> {
-        swap::get_chart_info()
     }
 
     fn get_processes_swap(&self, unit: &SizeUnits) -> Result<Vec<ProcessSwapInfo>, SwapDataError> {
         swap::get_processes_using_swap(unit.clone())
     }
 
-    #[cfg(target_os = "linux")]
     fn get_numa_topology(&self) -> Result<Vec<NumaNode>, SwapDataError> {
         // Use GPU NUMA mapping if GPUs are available
         let gpu_map = if gpu::check_nvidia_smi_available() {
@@ -67,7 +55,6 @@ impl DataProvider for ProcDataProvider {
             .map_err(SwapDataError::Io)
     }
 
-    #[cfg(target_os = "linux")]
     fn get_process_numa_maps(&self, pid: u32, name: &str) -> Result<ProcessNumaInfo, SwapDataError> {
         let path = format!("/proc/{}/numa_maps", pid);
         let content = std::fs::read_to_string(&path).map_err(SwapDataError::Io)?;
@@ -75,7 +62,6 @@ impl DataProvider for ProcDataProvider {
         Ok(numa::parse_numa_maps(&content, pid, name, page_size_kb))
     }
 
-    #[cfg(target_os = "linux")]
     fn is_numa_available(&self) -> bool {
         std::path::Path::new("/sys/devices/system/node/node0").exists()
     }
@@ -128,9 +114,7 @@ impl DataProvider for ProcDataProvider {
 pub struct MockDataProvider {
     pub swap_update: SwapUpdate,
     pub processes: Vec<ProcessSwapInfo>,
-    #[cfg(target_os = "linux")]
     pub numa_nodes: Vec<NumaNode>,
-    #[cfg(target_os = "linux")]
     pub numa_available: bool,
     pub gpu_devices: Vec<GpuDevice>,
     pub gpu_processes: Vec<GpuProcessInfo>,
@@ -142,16 +126,14 @@ impl MockDataProvider {
     pub fn new() -> Self {
         Self {
             swap_update: SwapUpdate {
-                #[cfg(target_os = "linux")]
                 swap_devices: vec![],
                 total_swap: 8_000_000,
                 used_swap: 2_000_000,
             },
             processes: vec![
-                ProcessSwapInfo { pid: 1, name: "test_proc".into(), swap_size: 1024.0, #[cfg(target_os = "linux")] last_cpu: Some(0) },
-                ProcessSwapInfo { pid: 2, name: "another".into(), swap_size: 512.0, #[cfg(target_os = "linux")] last_cpu: Some(1) },
+                ProcessSwapInfo { pid: 1, name: "test_proc".into(), swap_size: 1024.0, last_cpu: Some(0) },
+                ProcessSwapInfo { pid: 2, name: "another".into(), swap_size: 512.0, last_cpu: Some(1) },
             ],
-            #[cfg(target_os = "linux")]
             numa_nodes: vec![
                 NumaNode {
                     id: 0,
@@ -161,7 +143,6 @@ impl MockDataProvider {
                     node_type: NumaNodeType::Cpu,
                 },
             ],
-            #[cfg(target_os = "linux")]
             numa_available: true,
             gpu_devices: vec![],
             gpu_processes: vec![],
@@ -180,12 +161,10 @@ impl DataProvider for MockDataProvider {
         Ok(self.processes.clone())
     }
 
-    #[cfg(target_os = "linux")]
     fn get_numa_topology(&self) -> Result<Vec<NumaNode>, SwapDataError> {
         Ok(self.numa_nodes.clone())
     }
 
-    #[cfg(target_os = "linux")]
     fn get_process_numa_maps(&self, pid: u32, name: &str) -> Result<ProcessNumaInfo, SwapDataError> {
         Ok(ProcessNumaInfo {
             pid,
@@ -196,7 +175,6 @@ impl DataProvider for MockDataProvider {
         })
     }
 
-    #[cfg(target_os = "linux")]
     fn is_numa_available(&self) -> bool {
         self.numa_available
     }
@@ -216,10 +194,9 @@ impl DataProvider for MockDataProvider {
 
 use std::collections::HashMap as StdHashMap;
 
-/// Merge swap, GPU, and (optionally) NUMA data into unified process info.
+/// Merge swap, GPU, and NUMA data into unified process info.
 /// Joins by PID. Processes appearing in both swap and GPU get `CpuAndGpu`.
 /// Multi-GPU: accumulates gpu_memory_kb (sum) and collects gpu_indices.
-#[cfg(target_os = "linux")]
 pub fn merge_process_data(
     swap_procs: &[ProcessSwapInfo],
     gpu_procs: &[GpuProcessInfo],
@@ -326,61 +303,6 @@ pub fn merge_process_data(
     result
 }
 
-/// Simplified merge for non-Linux platforms (no NUMA data).
-/// Multi-GPU: accumulates gpu_memory_kb (sum) and collects gpu_indices.
-#[cfg(not(target_os = "linux"))]
-pub fn merge_process_data(
-    swap_procs: &[ProcessSwapInfo],
-    gpu_procs: &[GpuProcessInfo],
-) -> Vec<UnifiedProcessInfo> {
-    let mut by_pid: StdHashMap<u32, UnifiedProcessInfo> = StdHashMap::new();
-
-    for p in swap_procs {
-        by_pid.insert(
-            p.pid,
-            UnifiedProcessInfo {
-                pid: p.pid,
-                name: p.name.clone(),
-                swap_kb: p.swap_size as u64,
-                gpu_memory_kb: None,
-                gpu_indices: Vec::new(),
-                location: ProcessLocation::CpuOnly,
-            },
-        );
-    }
-
-    for gp in gpu_procs {
-        if let Some(existing) = by_pid.get_mut(&gp.pid) {
-            let prev = existing.gpu_memory_kb.unwrap_or(0);
-            existing.gpu_memory_kb = Some(prev + gp.gpu_memory_used_kb);
-            if !existing.gpu_indices.contains(&gp.gpu_index) {
-                existing.gpu_indices.push(gp.gpu_index);
-            }
-            existing.location = ProcessLocation::CpuAndGpu;
-        } else {
-            by_pid.insert(
-                gp.pid,
-                UnifiedProcessInfo {
-                    pid: gp.pid,
-                    name: gp.name.clone(),
-                    swap_kb: 0,
-                    gpu_memory_kb: Some(gp.gpu_memory_used_kb),
-                    gpu_indices: vec![gp.gpu_index],
-                    location: ProcessLocation::GpuOnly,
-                },
-            );
-        }
-    }
-
-    let mut result: Vec<UnifiedProcessInfo> = by_pid.into_values().collect();
-    result.sort_by(|a, b| {
-        let total_a = a.swap_kb + a.gpu_memory_kb.unwrap_or(0);
-        let total_b = b.swap_kb + b.gpu_memory_kb.unwrap_or(0);
-        total_b.cmp(&total_a)
-    });
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -399,7 +321,7 @@ mod tests {
 
     #[test]
     fn test_merge_same_pid() {
-        let swap = vec![ProcessSwapInfo { pid: 100, name: "train".into(), swap_size: 1024.0, #[cfg(target_os = "linux")] last_cpu: None }];
+        let swap = vec![ProcessSwapInfo { pid: 100, name: "train".into(), swap_size: 1024.0, last_cpu: None }];
         let gpu = vec![GpuProcessInfo { pid: 100, name: "train".into(), gpu_index: 0, gpu_memory_used_kb: 4096 }];
         let result = merge_process_data(&swap, &gpu, &[], &[], &[]);
         assert_eq!(result.len(), 1);
@@ -410,7 +332,7 @@ mod tests {
 
     #[test]
     fn test_cpu_only_process() {
-        let swap = vec![ProcessSwapInfo { pid: 100, name: "bash".into(), swap_size: 512.0, #[cfg(target_os = "linux")] last_cpu: None }];
+        let swap = vec![ProcessSwapInfo { pid: 100, name: "bash".into(), swap_size: 512.0, last_cpu: None }];
         let gpu: Vec<GpuProcessInfo> = vec![];
         let result = merge_process_data(&swap, &gpu, &[], &[], &[]);
         assert_eq!(result.len(), 1);
@@ -430,8 +352,8 @@ mod tests {
     #[test]
     fn test_unified_sorting() {
         let swap = vec![
-            ProcessSwapInfo { pid: 1, name: "small".into(), swap_size: 100.0, #[cfg(target_os = "linux")] last_cpu: None },
-            ProcessSwapInfo { pid: 2, name: "big".into(), swap_size: 5000.0, #[cfg(target_os = "linux")] last_cpu: None },
+            ProcessSwapInfo { pid: 1, name: "small".into(), swap_size: 100.0, last_cpu: None },
+            ProcessSwapInfo { pid: 2, name: "big".into(), swap_size: 5000.0, last_cpu: None },
         ];
         let gpu = vec![
             GpuProcessInfo { pid: 3, name: "gpu_big".into(), gpu_index: 0, gpu_memory_used_kb: 10000 },
@@ -448,8 +370,8 @@ mod tests {
     fn test_aggregate_unified() {
         // merge_process_data handles aggregation by PID (not by name)
         let swap = vec![
-            ProcessSwapInfo { pid: 1, name: "proc".into(), swap_size: 100.0, #[cfg(target_os = "linux")] last_cpu: None },
-            ProcessSwapInfo { pid: 2, name: "proc".into(), swap_size: 200.0, #[cfg(target_os = "linux")] last_cpu: None },
+            ProcessSwapInfo { pid: 1, name: "proc".into(), swap_size: 100.0, last_cpu: None },
+            ProcessSwapInfo { pid: 2, name: "proc".into(), swap_size: 200.0, last_cpu: None },
         ];
         let gpu: Vec<GpuProcessInfo> = vec![];
         let result = merge_process_data(&swap, &gpu, &[], &[], &[]);
@@ -459,7 +381,7 @@ mod tests {
 
     #[test]
     fn test_hbm_migration_detected() {
-        let swap = vec![ProcessSwapInfo { pid: 100, name: "migrated".into(), swap_size: 1024.0, #[cfg(target_os = "linux")] last_cpu: None }];
+        let swap = vec![ProcessSwapInfo { pid: 100, name: "migrated".into(), swap_size: 1024.0, last_cpu: None }];
         let gpu: Vec<GpuProcessInfo> = vec![];
         let numa_infos = vec![ProcessNumaInfo {
             pid: 100,
@@ -480,8 +402,8 @@ mod tests {
     #[test]
     fn test_graceful_no_gpu() {
         let swap = vec![
-            ProcessSwapInfo { pid: 1, name: "proc1".into(), swap_size: 100.0, #[cfg(target_os = "linux")] last_cpu: None },
-            ProcessSwapInfo { pid: 2, name: "proc2".into(), swap_size: 200.0, #[cfg(target_os = "linux")] last_cpu: None },
+            ProcessSwapInfo { pid: 1, name: "proc1".into(), swap_size: 100.0, last_cpu: None },
+            ProcessSwapInfo { pid: 2, name: "proc2".into(), swap_size: 200.0, last_cpu: None },
         ];
         let gpu: Vec<GpuProcessInfo> = vec![];
         let result = merge_process_data(&swap, &gpu, &[], &[], &[]);
@@ -522,7 +444,7 @@ mod tests {
 
     #[test]
     fn test_graceful_no_numa() {
-        let swap = vec![ProcessSwapInfo { pid: 1, name: "proc".into(), swap_size: 100.0, #[cfg(target_os = "linux")] last_cpu: None }];
+        let swap = vec![ProcessSwapInfo { pid: 1, name: "proc".into(), swap_size: 100.0, last_cpu: None }];
         let gpu = vec![GpuProcessInfo { pid: 1, name: "proc".into(), gpu_index: 0, gpu_memory_used_kb: 500 }];
         // No NUMA data at all
         let result = merge_process_data(&swap, &gpu, &[], &[], &[]);
@@ -537,7 +459,7 @@ mod tests {
     fn test_merge_multi_gpu_same_pid() {
         let swap = vec![ProcessSwapInfo {
             pid: 100, name: "train".into(), swap_size: 1024.0,
-            #[cfg(target_os = "linux")] last_cpu: None,
+            last_cpu: None,
         }];
         let gpu = vec![
             GpuProcessInfo { pid: 100, name: "train".into(), gpu_index: 0, gpu_memory_used_kb: 4096 },
@@ -558,7 +480,7 @@ mod tests {
     fn test_merge_carries_kb_per_node() {
         let swap = vec![ProcessSwapInfo {
             pid: 42, name: "app".into(), swap_size: 512.0,
-            #[cfg(target_os = "linux")] last_cpu: None,
+            last_cpu: None,
         }];
         let numa_infos = vec![ProcessNumaInfo {
             pid: 42, name: "app".into(),
@@ -574,7 +496,7 @@ mod tests {
     fn test_merge_carries_cpu_node() {
         let swap = vec![ProcessSwapInfo {
             pid: 42, name: "app".into(), swap_size: 512.0,
-            #[cfg(target_os = "linux")] last_cpu: None,
+            last_cpu: None,
         }];
         let numa_infos = vec![ProcessNumaInfo {
             pid: 42, name: "app".into(),
@@ -618,7 +540,7 @@ mod tests {
     fn test_merge_no_numa_info_empty_pages() {
         let swap = vec![ProcessSwapInfo {
             pid: 1, name: "proc".into(), swap_size: 100.0,
-            #[cfg(target_os = "linux")] last_cpu: None,
+            last_cpu: None,
         }];
         let result = merge_process_data(&swap, &[], &[], &[], &[]);
         assert!(result[0].kb_per_node.is_empty());
@@ -631,7 +553,7 @@ mod tests {
     fn test_merge_hbm_migration_with_new_fields() {
         let swap = vec![ProcessSwapInfo {
             pid: 100, name: "migrated".into(), swap_size: 1024.0,
-            #[cfg(target_os = "linux")] last_cpu: None,
+            last_cpu: None,
         }];
         let numa_infos = vec![ProcessNumaInfo {
             pid: 100, name: "migrated".into(),

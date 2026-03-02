@@ -103,8 +103,15 @@ cargo build --release
 ## Usage
 
 ```bash
-nv-swaptop          # interactive mode
-nv-swaptop --demo   # auto-cycle all views and quit (for recording)
+nv-swaptop            # interactive mode
+nv-swaptop --demo     # auto-cycle all views and quit (for recording)
+nv-swaptop --help     # show help with keyboard controls and data sources
+nv-swaptop --version  # print version
+```
+
+A manpage is generated at build time and included in release archives. After installing from a release tarball:
+```bash
+man ./nv-swaptop.1
 ```
 
 ### Keyboard Controls
@@ -273,7 +280,8 @@ Cycle through 5 themes with `t`:
 
 ```tree
 src/
-├── main.rs              # Thin entry point
+├── main.rs              # Entry point: parses CLI via clap, creates App, runs event loop
+├── cli.rs               # Cli struct (clap derive) — --demo, --help, --version
 ├── app.rs               # App struct, event loop, state, key handling, caching
 ├── theme.rs             # Color theme definitions
 ├── data/
@@ -282,17 +290,19 @@ src/
 │   ├── swap.rs          # Swap data collection
 │   ├── numa.rs          # NUMA topology parsing
 │   └── gpu.rs           # nvidia-smi CSV parsing
-└── ui/
-    ├── mod.rs           # UI module re-exports
-    ├── chart.rs         # Animated swap usage chart
-    ├── process_list.rs  # Process list with scrolling
-    ├── swap_devices.rs  # Swap device table
-    ├── numa_view.rs     # NUMA topology + per-process distribution
-    ├── gpu_view.rs      # GPU device summary + process list
-    └── unified_view.rs  # Combined CPU+GPU+NUMA process table
+├── ui/
+│   ├── mod.rs           # UI module re-exports
+│   ├── chart.rs         # Animated swap usage chart
+│   ├── process_list.rs  # Process list with scrolling
+│   ├── swap_devices.rs  # Swap device table
+│   ├── numa_view.rs     # NUMA topology + per-process distribution
+│   ├── gpu_view.rs      # GPU device summary + process list
+│   └── unified_view.rs  # Combined CPU+GPU+NUMA process table
+└── smoke_tests.rs       # Integration/smoke tests
+build.rs                 # Generates nv-swaptop.1 manpage via clap_mangen
 ```
 
-All data collection is behind a `DataProvider` trait, enabling mock-based testing. Parsing functions are pure (`&str -> T`) for full testability without real hardware. 80 unit tests cover type conversions, aggregation, NUMA/GPU parsing, page-size-aware numa_maps parsing, CPU-to-NUMA mapping, process merging, and demo mode scheduling.
+All data collection is behind a `DataProvider` trait, enabling mock-based testing. Parsing functions are pure (`&str -> T`) for full testability without real hardware. 127 unit tests cover CLI parsing, type conversions, aggregation, NUMA/GPU parsing, page-size-aware numa_maps parsing, CPU-to-NUMA mapping, process merging, demo mode scheduling, and manpage content validation.
 
 ## Technical Details
 

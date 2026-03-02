@@ -17,7 +17,7 @@ cargo build --release
 cargo run
 ./target/release/nv-swaptop
 
-# Run all tests (80 unit tests)
+# Run all tests (127 unit tests)
 cargo test
 
 # Run a single test
@@ -54,17 +54,18 @@ Requires Rust 1.88.0+ (edition 2024). GPU features require `nvidia-smi` in PATH 
 
 ### Data Flow
 
-`main.rs` creates an `App` with a `Box<dyn DataProvider>` and runs the event loop. The `DataProvider` trait abstracts all system data collection, enabling a `MockDataProvider` for tests.
+`main.rs` parses CLI args via `clap` (`src/cli.rs`), creates an `App` with a `Box<dyn DataProvider>` and runs the event loop. The `DataProvider` trait abstracts all system data collection, enabling a `MockDataProvider` for tests. `build.rs` generates a manpage (`nv-swaptop.1`) at compile time using `clap_mangen`.
 
-### Platform Separation
+### Platform
 
-Uses `#[cfg(target_os = "linux")]` throughout. Legacy `#[cfg(target_os = "windows")]` blocks exist in the code but Windows is not supported or built. Functions with platform-specific implementations use separate `#[cfg(...)]` blocks rather than runtime detection. This includes `App::run()`, `App::render()`, `App::on_key_event()`, `merge_process_data()`, and the `SwapDataError` enum.
+Linux-only. All Windows support was removed — there are no `#[cfg(target_os = "windows")]` blocks or Windows dependencies. Linux-specific dependencies (`procfs`, `proc-mounts`) are gated behind `[target.'cfg(target_os = "linux")'.dependencies]` in `Cargo.toml`.
 
 ### Module Organization
 
 ```tree
 src/
-├── main.rs              # Thin entry point: creates App with ProcDataProvider, runs event loop
+├── main.rs              # Thin entry point: parses CLI via clap, creates App, runs event loop
+├── cli.rs               # Cli struct (clap derive) — --demo flag, --help, --version
 ├── app.rs               # Event loop, state, TTL-based caching, key handling, view rendering dispatch
 ├── theme.rs             # 5 color themes (Default, Solarized, Monokai, Dracula, Nord)
 ├── data/
@@ -73,23 +74,25 @@ src/
 │   ├── swap.rs          # Swap data from /proc/meminfo
 │   ├── numa.rs          # Pure NUMA parsing (meminfo, cpulist, numa_maps); sysfs topology discovery
 │   └── gpu.rs           # nvidia-smi CSV parsing; all parsing is pure &str -> T for testability
-└── ui/
-    ├── mod.rs           # UI module re-exports
-    ├── chart.rs         # Animated swap usage chart
-    ├── process_list.rs  # Process list with scrolling
-    ├── swap_devices.rs  # Swap device table
-    ├── numa_view.rs     # NUMA topology + per-process distribution
-    ├── gpu_view.rs      # GPU device summary + process list
-    └── unified_view.rs  # Combined CPU+GPU+NUMA process table
+├── ui/
+│   ├── mod.rs           # UI module re-exports
+│   ├── chart.rs         # Animated swap usage chart
+│   ├── process_list.rs  # Process list with scrolling
+│   ├── swap_devices.rs  # Swap device table
+│   ├── numa_view.rs     # NUMA topology + per-process distribution
+│   ├── gpu_view.rs      # GPU device summary + process list
+│   └── unified_view.rs  # Combined CPU+GPU+NUMA process table
+└── smoke_tests.rs       # Integration/smoke tests (manpage content, cargo metadata, CLI behaviour)
+build.rs                 # Generates nv-swaptop.1 manpage via clap_mangen at build time
 ```
 
 ### Key Design Patterns
 
-- **Pure parsing functions** — GPU and NUMA parsers take `&str` input and return typed data, no I/O. This is how the 80 tests work without real hardware.
+- **Pure parsing functions** — GPU and NUMA parsers take `&str` input and return typed data, no I/O. This is how the 127 tests work without real hardware.
 - **TTL caching** — `App` caches expensive data with different TTLs: NUMA topology (30s), NUMA maps (5s, only when NUMA view active), GPU devices (10s), GPU processes (1s).
 - **Lazy refresh** — NUMA maps only refresh when the NUMA tab is active. GPU data only refreshes when GPU or Unified tab is active.
 - **Unified view merge** — `merge_process_data()` joins swap, GPU, and NUMA data by PID. Detects HBM migration (CPU process with pages on a GPU HBM NUMA node).
 
 ### CI/CD
 
-GitHub Actions workflow (`.github/workflows/release.yml`) triggers on `v*.*.*` tags. Builds for Linux (amd64 native, arm64/ppc64le/riscv64/s390x cross-compile, loongarch64 via `cross` tool). Creates GitHub release with archived binaries.
+GitHub Actions workflow (`.github/workflows/release.yml`) triggers on `v*.*.*` tags. Builds for Linux (amd64 native, arm64/ppc64le/riscv64/s390x cross-compile, loongarch64 via `cross` tool). Creates GitHub release with archived binaries + manpage.

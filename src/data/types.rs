@@ -6,11 +6,9 @@ pub struct ProcessSwapInfo {
     pub pid: u32,
     pub name: String,
     pub swap_size: f64,
-    #[cfg(target_os = "linux")]
     pub last_cpu: Option<i32>,
 }
 
-#[cfg(target_os = "linux")]
 #[derive(Debug, Clone)]
 pub struct InfoSwap {
     pub name: String,
@@ -22,7 +20,6 @@ pub struct InfoSwap {
 
 #[derive(Debug, Clone, Default)]
 pub struct SwapUpdate {
-    #[cfg(target_os = "linux")]
     pub swap_devices: Vec<InfoSwap>,
     pub total_swap: u64,
     pub used_swap: u64,
@@ -36,7 +33,6 @@ pub enum SizeUnits {
     GB,
 }
 
-#[cfg(target_os = "linux")]
 #[derive(Debug, Error)]
 pub enum SwapDataError {
     #[error("Procfs error: {0}")]
@@ -45,16 +41,8 @@ pub enum SwapDataError {
     Io(#[from] std::io::Error),
 }
 
-#[cfg(target_os = "windows")]
-#[derive(Debug, Error)]
-pub enum SwapDataError {
-    #[error("I/O error accessing system information: {0}")]
-    Io(#[from] std::io::Error),
-}
-
 // --- NUMA types (Linux only) ---
 
-#[cfg(target_os = "linux")]
 #[derive(Debug, Clone, PartialEq)]
 pub enum NumaNodeType {
     Cpu,
@@ -62,7 +50,6 @@ pub enum NumaNodeType {
     Unknown,
 }
 
-#[cfg(target_os = "linux")]
 #[derive(Debug, Clone)]
 pub struct NumaNode {
     pub id: u32,
@@ -72,7 +59,6 @@ pub struct NumaNode {
     pub node_type: NumaNodeType,
 }
 
-#[cfg(target_os = "linux")]
 #[derive(Debug, Clone)]
 pub struct ProcessNumaInfo {
     pub pid: u32,
@@ -86,7 +72,6 @@ pub struct ProcessNumaInfo {
 pub enum ActiveView {
     #[default]
     Swap,
-    #[cfg(target_os = "linux")]
     Numa,
     Gpu,
     Unified,
@@ -128,11 +113,8 @@ pub struct UnifiedProcessInfo {
     pub pid: u32,
     pub name: String,
     pub swap_kb: u64,
-    #[cfg(target_os = "linux")]
     pub cpu_nodes: Vec<u32>,
-    #[cfg(target_os = "linux")]
     pub gpu_nodes: Vec<u32>,
-    #[cfg(target_os = "linux")]
     pub kb_per_node: HashMap<u32, u64>,
     pub gpu_memory_kb: Option<u64>,
     pub gpu_indices: Vec<u32>,
@@ -203,8 +185,8 @@ mod tests {
     #[test]
     fn test_aggregate_dedup() {
         let procs = vec![
-            ProcessSwapInfo { pid: 1, name: "firefox".into(), swap_size: 100.0, #[cfg(target_os = "linux")] last_cpu: None },
-            ProcessSwapInfo { pid: 2, name: "firefox".into(), swap_size: 200.0, #[cfg(target_os = "linux")] last_cpu: None },
+            ProcessSwapInfo { pid: 1, name: "firefox".into(), swap_size: 100.0, last_cpu: None },
+            ProcessSwapInfo { pid: 2, name: "firefox".into(), swap_size: 200.0, last_cpu: None },
         ];
         let result = aggregate_processes(procs);
         assert_eq!(result.len(), 1);
@@ -216,9 +198,9 @@ mod tests {
     #[test]
     fn test_aggregate_sorted() {
         let procs = vec![
-            ProcessSwapInfo { pid: 1, name: "small".into(), swap_size: 10.0, #[cfg(target_os = "linux")] last_cpu: None },
-            ProcessSwapInfo { pid: 2, name: "big".into(), swap_size: 500.0, #[cfg(target_os = "linux")] last_cpu: None },
-            ProcessSwapInfo { pid: 3, name: "medium".into(), swap_size: 100.0, #[cfg(target_os = "linux")] last_cpu: None },
+            ProcessSwapInfo { pid: 1, name: "small".into(), swap_size: 10.0, last_cpu: None },
+            ProcessSwapInfo { pid: 2, name: "big".into(), swap_size: 500.0, last_cpu: None },
+            ProcessSwapInfo { pid: 3, name: "medium".into(), swap_size: 100.0, last_cpu: None },
         ];
         let result = aggregate_processes(procs);
         assert_eq!(result[0].name, "big");
@@ -231,7 +213,6 @@ mod tests {
         assert_eq!(SizeUnits::default(), SizeUnits::KB);
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn test_process_swap_info_has_last_cpu() {
         let info = ProcessSwapInfo {

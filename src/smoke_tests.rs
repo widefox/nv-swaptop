@@ -1190,3 +1190,85 @@ fn test_smoke_full_render_cycle() {
 
     // If we got here, no panics occurred
 }
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Part 3: Manpage tests (build.rs generates nv-swaptop.1)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+fn read_manpage() -> String {
+    let dir = env!("NV_SWAPTOP_MANPAGE_DIR");
+    let path = std::path::Path::new(dir).join("nv-swaptop.1");
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to read manpage at {}: {}", path.display(), e))
+}
+
+#[test]
+fn test_manpage_generated_at_build_time() {
+    let dir = env!("NV_SWAPTOP_MANPAGE_DIR");
+    let path = std::path::Path::new(dir).join("nv-swaptop.1");
+    assert!(path.exists(), "Manpage not found at {}", path.display());
+}
+
+#[test]
+fn test_manpage_is_valid_roff() {
+    let content = read_manpage();
+    assert!(content.contains(".TH"), "Manpage missing .TH macro");
+    assert!(content.contains("nv-swaptop"), "Manpage missing programme name");
+}
+
+#[test]
+fn test_manpage_documents_keyboard_controls() {
+    let content = read_manpage();
+    for key in ["Tab", "Esc", "Home", "End"] {
+        assert!(content.contains(key), "Manpage missing keyboard control: {}", key);
+    }
+}
+
+#[test]
+fn test_manpage_documents_views() {
+    let content = read_manpage();
+    for view in ["Swap", "NUMA", "GPU", "Unified"] {
+        assert!(content.contains(view), "Manpage missing view: {}", view);
+    }
+}
+
+#[test]
+fn test_manpage_documents_data_sources() {
+    let content = read_manpage();
+    assert!(content.contains("/proc"), "Manpage missing /proc data source");
+    // roff escapes hyphens as \-, so check for "nvidia" rather than "nvidia-smi"
+    assert!(content.contains("nvidia"), "Manpage missing nvidia-smi data source");
+}
+
+#[test]
+fn test_manpage_documents_colour_coding() {
+    let content = read_manpage();
+    for term in ["colour", "green", "orange", "red"] {
+        assert!(content.contains(term), "Manpage missing colour term: {}", term);
+    }
+}
+
+#[test]
+fn test_manpage_version_matches_cargo_toml() {
+    let content = read_manpage();
+    let version = env!("CARGO_PKG_VERSION");
+    assert!(
+        content.contains(version),
+        "Manpage does not contain version {version}"
+    );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Part 4: Cargo.toml sanity checks
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#[test]
+fn test_no_windows_dependencies_in_cargo_toml() {
+    let cargo_toml = include_str!("../Cargo.toml");
+    for dep in ["tasklist", "winapi", r#"cfg(target_os = "windows")"#] {
+        assert!(
+            !cargo_toml.contains(dep),
+            "Cargo.toml still contains Windows dependency: {dep}"
+        );
+    }
+}
