@@ -27,6 +27,13 @@ jobs:
             binary_name_suffix: ""
             archive_format: tar.gz
           - target_os: linux
+            rust_target: aarch64-unknown-linux-musl
+            cross_linker: aarch64-linux-gnu-gcc
+            cross_pkg: gcc-aarch64-linux-gnu
+            output_artifact_suffix: linux-arm64-musl
+            binary_name_suffix: ""
+            archive_format: tar.gz
+          - target_os: linux
             rust_target: powerpc64le-unknown-linux-gnu
             cross_linker: powerpc64le-linux-gnu-gcc
             cross_pkg: gcc-powerpc64le-linux-gnu
@@ -106,6 +113,7 @@ jobs:
         env:
           RUSTFLAGS: -C strip=symbols
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross_linker }}
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: ${{ matrix.cross_linker }}
           CARGO_TARGET_POWERPC64LE_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross_linker }}
           CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross_linker }}
           CARGO_TARGET_S390X_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross_linker }}
@@ -232,6 +240,6 @@ jobs:
             Built from commit: ${{ github.sha }}
             Commit message: ${{ github.event.head_commit.message }}
 
-            See attached assets for Linux (amd64, arm64, ppc64le, riscv64, s390x, loongarch64).
+            See attached assets for Linux (amd64, arm64, arm64-musl, ppc64le, riscv64, s390x, loongarch64).
           files: |
             release-assets/*/*

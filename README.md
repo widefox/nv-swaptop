@@ -74,7 +74,7 @@ Zero-KB cells show a plain `-` with no colour. The CPU column in the NUMA view u
 | Architecture | Status |
 |---|---|
 | x86_64 (amd64) | Supported |
-| ARM64 (aarch64) | Supported |
+| ARM64 (aarch64) | Supported — glibc and musl (static, 64KB page safe) builds |
 | Power (ppc64le) | Supported |
 | RISC-V (riscv64) | Supported |
 | s390x | Supported |
@@ -94,6 +94,15 @@ cd nv-swaptop
 cargo build --release
 ./target/release/nv-swaptop
 ```
+
+### ARM64 — which binary?
+
+| Binary | Use when |
+|--------|----------|
+| `linux-arm64` (glibc) | Standard aarch64 with 4KB pages (most Debian/Ubuntu) |
+| `linux-arm64-musl` (static) | 64KB page kernels: NVIDIA Grace Blackwell (GB200), RHEL 9+, Fedora aarch64 |
+
+The musl build is statically linked and works on any aarch64 Linux regardless of page size. If unsure, use the musl build.
 
 ### Prerequisites
 - [Rust 1.88.0+](https://rustup.rs/) (Rust 2024 edition)

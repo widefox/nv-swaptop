@@ -95,4 +95,4 @@ build.rs                 # Generates nv-swaptop.1 manpage via clap_mangen at bui
 
 ### CI/CD
 
-GitHub Actions workflow (`.github/workflows/release.yml`) triggers on `v*.*.*` tags. Builds for Linux (amd64 native, arm64/ppc64le/riscv64/s390x cross-compile, loongarch64 via `cross` tool). Creates GitHub release with archived binaries + manpage.
+GitHub Actions workflow (`.github/workflows/release.yml`) triggers on `v*.*.*` tags. Builds for Linux (amd64 native, arm64/arm64-musl/ppc64le/riscv64/s390x cross-compile, loongarch64 via `cross` tool). Creates GitHub release with archived binaries + manpage.
