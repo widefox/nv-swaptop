@@ -11,6 +11,7 @@ use ratatui::{
 
 const LINUX: bool = cfg!(target_os = "linux");
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_animated_chart(
     frame: &mut Frame,
     area: Rect,

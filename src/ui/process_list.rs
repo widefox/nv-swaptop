@@ -53,6 +53,7 @@ pub fn create_process_lines(
     lines
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_processes_list(
     frame: &mut Frame,
     area: Rect,

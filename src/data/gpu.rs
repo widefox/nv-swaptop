@@ -109,13 +109,10 @@ fn parse_mib_field(s: &str) -> u64 {
 pub fn run_nvidia_smi(args: &[&str]) -> Result<String, std::io::Error> {
     let output = Command::new("nvidia-smi").args(args).output()?;
     if !output.status.success() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!(
-                "nvidia-smi failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ),
-        ));
+        return Err(std::io::Error::other(format!(
+            "nvidia-smi failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )));
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
@@ -137,12 +134,12 @@ pub fn get_gpu_numa_mapping(devices: &[GpuDevice]) -> HashMap<u32, u32> {
         // PCI bus ID from nvidia-smi is like "00000000:01:00.0"
         // sysfs path: /sys/bus/pci/devices/<bus_id>/numa_node
         let sysfs_path = format!("/sys/bus/pci/devices/{}/numa_node", device.pci_bus_id);
-        if let Ok(content) = std::fs::read_to_string(&sysfs_path) {
-            if let Ok(node_id) = content.trim().parse::<i32>() {
-                // -1 means no NUMA affinity
-                if node_id >= 0 {
-                    mapping.insert(device.index, node_id as u32);
-                }
+        if let Ok(content) = std::fs::read_to_string(&sysfs_path)
+            && let Ok(node_id) = content.trim().parse::<i32>()
+        {
+            // -1 means no NUMA affinity
+            if node_id >= 0 {
+                mapping.insert(device.index, node_id as u32);
             }
         }
     }

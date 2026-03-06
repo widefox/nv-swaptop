@@ -374,30 +374,7 @@ ls /sys/devices/system/node/
 
 ## Changelog
 
-### v2.0.1
-- Add manpage generation at build time via `clap_mangen`
-- Add `clap` CLI with `--demo`, `--help`, `--version` flags
-- Remove all Windows support (`#[cfg(target_os = "windows")]` blocks, cross-compile targets)
-- Add NUMA memory locality colour coding (green=local, orange=remote, red=GPU HBM)
-- Add integration and smoke test suite (25 tests)
-- Fix GB200 topology: 2 GPUs per Grace CPU (1:2 ratio per superchip)
-- Parse `kernelpagesize_kB` per line in `numa_maps` (correct handling of mixed page sizes)
-- Enhance unified view with multi-GPU and per-NUMA-node columns
-- Add `aarch64-unknown-linux-musl` build target for 64KB page systems
-- Add Makefile with `make install` and `make uninstall` targets
-
-### v2.0.0
-- Rewrite: modular architecture with `DataProvider` trait and pure parsing functions
-- Add NUMA topology view with per-process memory distribution
-- Add GPU view with `nvidia-smi` CSV parsing (no NVML dependency)
-- Add unified CPU+GPU+NUMA process table with HBM migration detection
-- Add CPU NODE column to NUMA view with misalignment highlighting
-- Add `--demo` mode for automated view cycling and screenshot recording
-- Add 5 colour themes (Default, Solarized, Monokai, Dracula, Nord)
-- Add TTL-based caching for expensive data sources
-- Add 127 unit tests covering all parsing and data merging
-- Add cross-compilation for ARM64, Power, RISC-V, s390x, LoongArch
-- Drop Windows support; Linux-only
+See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ## Contributors
 

@@ -12,6 +12,7 @@ use ratatui::{
 use crate::data::swap::find_mount_device;
 
 #[cfg(target_os = "linux")]
+#[allow(clippy::too_many_arguments)]
 pub fn render_swap_devices(
     frame: &mut Frame,
     area: Rect,
